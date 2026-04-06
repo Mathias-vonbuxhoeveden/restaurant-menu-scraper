@@ -1,0 +1,22 @@
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Excel output files
+*.xlsx
+
+# Environment
+.env
+
+# macOS
+.DS_Store
+
+# Temp / debug
+*.png
+debug_*.py

@@ -1,0 +1,8 @@
+playwright
+openpyxl
+requests
+pdfplumber
+beautifulsoup4
+anthropic
+pydantic
+pypdfium2
