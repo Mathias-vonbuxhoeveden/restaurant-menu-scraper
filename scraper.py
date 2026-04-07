@@ -13,6 +13,7 @@ Flow:
 
 import argparse
 import json
+import os
 import re
 import sys
 import io
@@ -29,6 +30,52 @@ DEBUG = False  # set to True via --debug flag
 
 # Only one Playwright/Chromium instance at a time to cap RAM usage
 _playwright_semaphore = threading.Semaphore(1)
+
+SCRAPER_API_KEY = os.environ.get("SCRAPER_API_KEY", "")
+
+
+def _is_cloudflare_blocked(resp: requests.Response) -> bool:
+    """Return True if the response looks like a Cloudflare block page."""
+    if resp.status_code in (403, 429, 503):
+        return True
+    text = resp.text[:3000].lower()
+    return "cf-ray" in resp.headers and ("cloudflare" in text or "just a moment" in text)
+
+
+def _is_cloudflare_html(html: str) -> bool:
+    """Return True if rendered HTML is a Cloudflare challenge page."""
+    snippet = html[:3000].lower()
+    return "cloudflare" in snippet and ("just a moment" in snippet or "enable javascript" in snippet)
+
+
+def fetch_html(url: str, timeout: int = 15, render_js: bool = False) -> requests.Response:
+    """
+    Fetch URL normally; if blocked (403/Cloudflare), retry via ScraperAPI.
+    Set render_js=True to use ScraperAPI's JS-rendering endpoint.
+    """
+    if not render_js:
+        try:
+            resp = requests.get(url, timeout=timeout, headers=HEADERS)
+            if not _is_cloudflare_blocked(resp):
+                resp.raise_for_status()
+                return resp
+            print(f"  Blockerad ({resp.status_code}) av Cloudflare/WAF")
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code != 403:
+                raise
+            print(f"  HTTP 403 — provar ScraperAPI …")
+
+    if not SCRAPER_API_KEY:
+        raise RuntimeError("Blockerad och SCRAPER_API_KEY saknas — kan inte fortsätta.")
+
+    params = f"api_key={SCRAPER_API_KEY}&url={requests.utils.quote(url, safe=':/?=&')}"
+    if render_js:
+        params += "&render=true"
+    scraper_url = f"http://api.scraperapi.com?{params}"
+    print(f"  Försöker via ScraperAPI (render_js={render_js}) …")
+    resp = requests.get(scraper_url, timeout=60)
+    resp.raise_for_status()
+    return resp
 
 
 def is_pdf_url(url: str) -> bool:
@@ -288,8 +335,7 @@ def parse_menu_from_html(html: str, language: str = "sv", menu_type: str = "dinn
 def scrape_static_html(url: str, language: str = "sv", menu_type: str = "dinner") -> tuple[str, list[tuple[str, str, str, str]]]:
     """Returns (raw_html, rows). raw_html is always returned for PDF-link scanning."""
     print("Hämtar statisk HTML …")
-    resp = requests.get(url, timeout=15, headers=HEADERS)
-    resp.raise_for_status()
+    resp = fetch_html(url, timeout=15)
     print(f"  HTTP {resp.status_code}, {len(resp.content):,} bytes, content-type: {resp.headers.get('content-type', '?')}")
     html = resp.text
     rows = parse_menu_from_html(html, language=language, menu_type=menu_type)
@@ -507,6 +553,21 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
         html = page.content()
         current_url = page.url
         browser.close()
+
+    # If Playwright landed on a Cloudflare challenge, fall back to ScraperAPI JS rendering
+    if _is_cloudflare_html(html):
+        if SCRAPER_API_KEY:
+            print("  Cloudflare detekterat i renderad HTML — faller tillbaka på ScraperAPI …")
+            try:
+                resp = fetch_html(url, render_js=True)
+                html = resp.text
+                current_url = url
+            except Exception as exc:
+                print(f"  ScraperAPI JS-fallback misslyckades: {exc}")
+                return []
+        else:
+            print("  Cloudflare detekterat men SCRAPER_API_KEY saknas — ger upp.")
+            return []
 
     # Check for PDF links in the rendered HTML (e.g. Squarespace sites where
     # PDF links are only injected after JS renders)
