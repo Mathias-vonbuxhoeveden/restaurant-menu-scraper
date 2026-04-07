@@ -16,6 +16,7 @@ import json
 import re
 import sys
 import io
+import threading
 import anthropic
 import requests
 import openpyxl
@@ -25,6 +26,9 @@ from urllib.parse import urljoin, urlparse
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 DEBUG = False  # set to True via --debug flag
+
+# Only one Playwright/Chromium instance at a time to cap RAM usage
+_playwright_semaphore = threading.Semaphore(1)
 
 
 def is_pdf_url(url: str) -> bool:
@@ -433,9 +437,39 @@ def scrape_dynamic(url: str, language: str = "sv", menu_type: str = "dinner") ->
     print("Playwright: renderar JS-sida …")
     from playwright.sync_api import sync_playwright
 
+    with _playwright_semaphore:
+        return _scrape_dynamic_impl(url, language=language, menu_type=menu_type)
+
+
+def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
+    from playwright.sync_api import sync_playwright
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not DEBUG)
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--single-process",
+                "--disable-extensions",
+                "--disable-background-networking",
+                "--disable-default-apps",
+                "--disable-sync",
+                "--mute-audio",
+                "--no-first-run",
+            ],
+        )
         page = browser.new_page()
+
+        # Block images, fonts and media — we only need HTML text
+        def _block_heavy(route):
+            if route.request.resource_type in ("image", "font", "media"):
+                route.abort()
+            else:
+                route.continue_()
+
+        page.route("**/*", _block_heavy)
         page.goto(url, wait_until="networkidle", timeout=30000)
 
         page_title = page.title() or ""
