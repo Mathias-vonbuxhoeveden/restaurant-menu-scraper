@@ -1,17 +1,14 @@
 services:
   - type: web
     name: restaurant-menu-scraper-api
-    runtime: node
+    runtime: python
     buildCommand: |
-      npm install
-      pip3 install -r requirements.txt
-      python3 -m playwright install --with-deps chromium
-    startCommand: node server.js
+      pip install -r requirements.txt
+      python -m playwright install --with-deps chromium
+    startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: NODE_ENV
-        value: production
-      - key: SERPAPI_KEY
-        sync: false   # set manually in Render dashboard
       - key: ANTHROPIC_API_KEY
+        sync: false   # set manually in Render dashboard
+      - key: SCRAPER_API_KEY
         sync: false   # set manually in Render dashboard
     healthCheckPath: /health

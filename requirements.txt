@@ -6,3 +6,5 @@ beautifulsoup4
 anthropic
 pydantic
 pypdfium2
+fastapi
+uvicorn[standard]

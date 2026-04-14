@@ -189,6 +189,7 @@ MENU_TYPES: dict[str, dict[str, str]] = {
         ),
     },
 }
+MENU_TYPES["a_la_carte"] = MENU_TYPES["dinner"]
 
 
 def _menu_type_instruction(menu_type: str, context: str) -> str:
