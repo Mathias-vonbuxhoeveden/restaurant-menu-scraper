@@ -148,22 +148,9 @@ Svara med ENBART siffran."""}],
     return pdfs[0]["url"]
 
 
-_NAME_INSTRUCTION_HTML = (
-    '"name": ENBART rättens namn — vanligtvis första raden eller första komma-separerade delen. '
-    'Aldrig ingredienser eller beskrivning.\n\n'
-    'Exempel: "POMODORO, SPAGHETTI, TOMATSÅS, STRACCIATELLA, BASILIKA  195kr"\n'
-    '→ name="POMODORO", price="195", description="SPAGHETTI, TOMATSÅS, STRACCIATELLA, BASILIKA"'
-)
-
-LANGUAGE_NAMES = {
-    "sv": "svenska",
-    "en": "engelska",
-}
-
-# Each menu type has three prompt snippets:
-#   extract  — injected into the extraction prompt (what to include/exclude)
+# Each menu type has two prompt snippets:
+#   extract  — injected into the extraction prompt (what to include/exclude), shared for HTML and PDF
 #   navigate — injected into link/tab selection prompts (what page/tab to look for)
-#   pdf      — injected into the PDF extraction prompt
 MENU_TYPES: dict[str, dict[str, str]] = {
     "dinner": {
         "extract": (
@@ -179,52 +166,41 @@ MENU_TYPES: dict[str, dict[str, str]] = {
             'middagsmeny / à la carte. Prioritera etiketter som "meny", "mat", "à la carte", "dinner", "food". '
             'Undvik: lunchmeny, dagens lunch, veckans meny, drycker, events, specialmenyer.'
         ),
-        "pdf": (
-            "Extrahera middagsmenyn / à la carte. "
-            "Inkludera: förätter, huvudrätter, desserter, barnmeny, "
-            "delningsrätter där man kan beställa för en person (använd priset per person). "
-            "Exkludera: lunchrätter, dagens rätt, drycker, viner, öl, "
-            "tillbehör utan eget rättspris, stora delningsrätter för flera. "
-            "Om en rätt har flera prisalternativ (t.ex. liten/stor), använd det lägsta priset."
-        ),
     },
 }
 MENU_TYPES["a_la_carte"] = MENU_TYPES["dinner"]
 
 
 def _menu_type_instruction(menu_type: str, context: str) -> str:
-    """Return the prompt snippet for the given menu_type and context (extract/navigate/pdf)."""
+    """Return the prompt snippet for the given menu_type and context (extract/navigate)."""
     spec = MENU_TYPES.get(menu_type, MENU_TYPES["dinner"])
     return spec.get(context, spec["extract"])
 
 
-def _language_instruction(language: str) -> str:
-    lang_name = LANGUAGE_NAMES.get(language, language)
-    return (
-        f"Om menyn finns på flera språk, använd {lang_name}. "
-        f"Om menyn bara finns på ett språk, använd det oavsett vilket."
-    )
+def _build_extraction_prompt(menu_type: str) -> str:
+    """Shared extraction instruction used for both HTML and PDF sources."""
+    extract_instruction = _menu_type_instruction(menu_type, "extract")
+    return f"""{extract_instruction}
+
+Returnera ett JSON-array där varje objekt har exakt dessa fält:
+- "name": ENBART rättens namn — vanligtvis första raden eller första komma-separerade delen. Aldrig ingredienser eller beskrivning.
+  Exempel: "POMODORO, SPAGHETTI, TOMATSÅS, STRACCIATELLA, BASILIKA  195kr"
+  → name="POMODORO", price="195", description="SPAGHETTI, TOMATSÅS, STRACCIATELLA, BASILIKA"
+- "price": priset som ett rent heltal utan enhet (t.ex. "139"), eller tom sträng om inget pris. Varje rätt har exakt ett pris — blanda aldrig ihop priser mellan olika rätter. Om texten är kolumnformaterad, se till att priset på samma rad som rätten används.
+- "category": sektionsrubriken som föregår denna rätt i menyn (t.ex. "FÖRRÄTT", "HUVUDRÄTT", "ANTIPASTI"). En rubrik gäller för alla rätter som följer tills nästa rubrik dyker upp. Tom sträng om ingen rubrik finns.
+- "description": ingredienser, tillbehör och övrig beskrivningstext från menyn. Kontext: description används av en annan AI för prisjämförelse mellan restauranger — ju mer konkret innehåll, desto bättre. Regler: aldrig rättens namn igen; aldrig kategorinamnet igen; lämna tom sträng ("") om ingen beskrivning finns på menyn; hitta ALDRIG på ingredienser — extrahera bara det som faktiskt står skrivet; behåll originalspråket (svenska/italienska/engelska som det står).
+
+Inkludera INTE: tillbehör utan eget pris, pizza-baser eller pizza-typer (t.ex. "rossa", "bianca"), sidorätter listade som tillägg, eller avdelningsrubriker.
+
+Returnera ENBART det råa JSON-arrayet — ingen markdown, inga backticks, ingen förklaring."""
 
 
 def extract_with_claude(text: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
     """Extract menu rows from HTML text using Claude Haiku."""
     client = anthropic.Anthropic()
-    name_instruction = _NAME_INSTRUCTION_HTML
-    extract_instruction = _menu_type_instruction(menu_type, "extract")
-
     prompt = f"""Du är en assistent som extraherar restaurangmenyer.
 
-{extract_instruction}
-
-Returnera ett JSON-array där varje objekt har exakt dessa fält:
-- {name_instruction}
-- "price": priset som ett rent heltal utan enhet (t.ex. "139"), eller tom sträng om inget pris. Varje rätt har exakt ett pris — blanda aldrig ihop priser mellan olika rätter. Om texten är kolumnformaterad, se till att priset på samma rad som rätten används.
-- "category": sektionsrubriken som föregår denna rätt i menyn (t.ex. "FÖRRÄTT", "HUVUDRÄTT", "ANTIPASTI"). En rubrik gäller för alla rätter som följer tills nästa rubrik dyker upp. Tom sträng om ingen rubrik finns.
-- "description": ingredienser, tillbehör och övrig beskrivningstext — allt som inte är namnet. {_language_instruction(language)}
-
-Inkludera INTE: tillbehör utan eget pris, pizza-baser eller pizza-typer (t.ex. "rossa", "bianca"), sidorätter listade som tillägg, eller avdelningsrubriker.
-
-Returnera ENBART det råa JSON-arrayet — ingen markdown, inga backticks, ingen förklaring.
+{_build_extraction_prompt(menu_type)}
 
 TEXT:
 {text}"""
@@ -271,13 +247,7 @@ def parse_pdf(pdf_bytes: bytes, language: str = "sv", menu_type: str = "dinner")
                 },
                 {
                     "type": "text",
-                    "text": f"""{ _menu_type_instruction(menu_type, "pdf")} Returnera ett JSON-array där varje objekt har exakt dessa fält:
-- "name": rättens namn exakt som det står på menyn — vanligtvis ett kort ord eller fras med versaler (t.ex. "ARANCINI", "COTOLETTA ALLA MILANESE"). Aldrig ingredienser eller beskrivning.
-- "price": priset som ett rent heltal utan enhet (t.ex. "139"), eller tom sträng om inget pris.
-- "category": sektionsrubriken som föregår denna rätt (t.ex. "FÖRRÄTT", "ANTIPASTI"). Tom sträng om ingen finns.
-- "description": ingredienser, tillbehör och övrig beskrivningstext. {_language_instruction(language)} Aldrig rättens namn igen.
-
-Returnera ENBART det råa JSON-arrayet — ingen markdown, inga backticks, ingen förklaring.""",
+                    "text": _build_extraction_prompt(menu_type),
                 },
             ],
         }],
@@ -348,135 +318,160 @@ def scrape_static_html(url: str, language: str = "sv", menu_type: str = "dinner"
 # Playwright (only for JS-rendered pages without PDF)
 # ---------------------------------------------------------------------------
 
-def pick_menu_link(links: list[dict], base_url: str, page_title: str, menu_type: str = "dinner") -> str | None:
-    """
-    Ask Claude to pick the navigation link most likely leading to the target menu.
-    Returns the resolved absolute URL, or None if no good match.
+def _html_text_snippet(html: str, max_chars: int = 400) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["nav", "footer", "header", "script", "style"]):
+        tag.decompose()
+    return soup.get_text(separator="\n", strip=True)[:max_chars]
 
-    `links` is a list of {"text": str, "href": str} dicts (non-PDF only).
-    """
-    if not links:
-        return None
+
+def _is_menu_complete(
+    rows: list[tuple[str, str, str, str]],
+    page_title: str,
+    text_snippet: str,
+    menu_type: str = "dinner",
+) -> bool:
+    """Ask Claude whether the current page content looks like a complete menu."""
+    nav_instruction = _menu_type_instruction(menu_type, "navigate")
+    if rows:
+        sample = "\n".join(f"{r[0]} | {r[1]} kr | {r[2]}" for r in rows[:10])
+        content = f"Extraherade rätter ({len(rows)} st, urval):\n{sample}"
+    else:
+        content = f"Inga rätter extraherade. Sidans text:\n{text_snippet}"
 
     client = anthropic.Anthropic()
-    link_list = "\n".join(
-        f'{i+1}. "{l["text"]}"  →  {l["href"]}'
-        for i, l in enumerate(links)
-    )
-    nav_instruction = _menu_type_instruction(menu_type, "navigate")
-    prompt = f"""Du hjälper till att hitta rätt länk på en restaurangsida.
-
-Sida: {base_url}
-Titel: {page_title}
-
-Navigeringslänkar:
-{link_list}
-
-Välj länken som leder till: {nav_instruction} Om ingen länk verkar relevant, svara 0.
-
-Svara med ENBART siffran."""
-
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=8,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": f"""Du hjälper till att avgöra om rätt menysida är nådd.
+
+Sida: {page_title}
+Letar efter: {nav_instruction}
+
+{content}
+
+Är detta den faktiska menyn med rätter och priser, eller en mellansida som kräver fler klick?
+Svara med ENBART: done (menyn nådd) eller continue (fler steg behövs)."""}],
     )
-    choice = response.content[0].text.strip()
+    answer = response.content[0].text.strip().lower()
+    print(f"  Claude bedömning: {answer!r}")
+    return "done" in answer
+
+
+def _extract_divi_links(page, base_url: str) -> list[dict]:
+    """
+    Extract column link URLs from Divi's et_link_options_data JS variable.
+    Divi stores clickable-column URLs in a script tag, not in href attributes.
+    """
     try:
-        idx = int(choice) - 1
-        if 0 <= idx < len(links):
-            return urljoin(base_url, links[idx]["href"])
-    except ValueError:
-        pass
-    return None
+        items = page.evaluate("""() => {
+            for (const s of document.querySelectorAll('script:not([src])')) {
+                const m = s.textContent.match(/et_link_options_data\\s*=\\s*(\\[[\\s\\S]*?\\])\\s*;/);
+                if (m) { try { return JSON.parse(m[1]); } catch(e) {} }
+            }
+            return [];
+        }""")
+        result = []
+        for item in (items or []):
+            cls = item.get("class", "")
+            url = item.get("url", "")
+            if not url or not cls:
+                continue
+            label = page.evaluate(
+                f"() => {{ const el = document.querySelector('.{cls}'); return el ? el.innerText.trim().slice(0, 60) : ''; }}"
+            )
+            result.append({"text": label or cls, "href": url, "type": "link"})
+        return result
+    except Exception:
+        return []
 
 
-def collect_nav_links(page, base_url: str) -> list[dict]:
+def collect_all_navigable_elements(page, base_url: str, max_items: int = 25) -> list[dict]:
     """
-    Extract links only from nav/header elements to avoid body noise.
-    Falls back to all links if nav yields nothing.
-    Deduplicates by link text (case-insensitive).
+    Collect links and interactive elements from the entire page.
+    Returns [{"text": str, "href": str|None, "type": "link"|"button"}, ...]
     """
-    # Prefer semantic navigation elements
-    NAV_SELECTOR = "nav a[href], header a[href], [role='navigation'] a[href]"
-    raw = []
-    for selector in [NAV_SELECTOR, "a[href]"]:
-        for a in page.locator(selector).all():
-            try:
-                text = (a.inner_text() or "").strip()
-                href = a.get_attribute("href") or ""
-                full = urljoin(base_url, href)
-                if text and href and not is_pdf_url(full):
-                    raw.append({"text": text, "href": href})
-            except Exception:
-                pass
-        if raw:
-            break
-
-    # Deduplicate by normalised text, preserve order
     seen: set[str] = set()
-    unique = []
-    for l in raw:
-        key = l["text"].lower()
+    elements: list[dict] = []
+
+    # Divi hides column links in a JS variable — extract those first
+    for item in _extract_divi_links(page, base_url):
+        key = item["text"].lower()
         if key not in seen:
             seen.add(key)
-            unique.append(l)
-    return unique
+            elements.append(item)
 
+    for a in page.locator("a[href]").all():
+        if len(elements) >= max_items:
+            break
+        try:
+            text = (a.inner_text() or "").strip()
+            href = a.get_attribute("href") or ""
+            full = urljoin(base_url, href)
+            key = text.lower()
+            if text and href and not is_pdf_url(full) and key not in seen and 2 <= len(text) <= 60:
+                seen.add(key)
+                elements.append({"text": text, "href": href, "type": "link"})
+        except Exception:
+            pass
 
-def collect_interactive_elements(page) -> list[str]:
-    """
-    Collect texts of visible buttons and tab-like elements on the current page.
-    Deduplicates by normalised text.
-    """
-    seen: set[str] = set()
-    texts: list[str] = []
-    locator = page.locator("button, [role='tab'], [role='button']")
-    for el in locator.all():
+    for el in page.locator("button, [role='tab'], [role='button']").all():
+        if len(elements) >= max_items:
+            break
         try:
             if not el.is_visible():
                 continue
             text = (el.inner_text() or "").strip()
-            if text and text.lower() not in seen and 2 <= len(text) <= 60:
-                seen.add(text.lower())
-                texts.append(text)
+            key = text.lower()
+            if text and key not in seen and 2 <= len(text) <= 60:
+                seen.add(key)
+                elements.append({"text": text, "href": None, "type": "button"})
         except Exception:
             pass
-    return texts
+
+    return elements
 
 
-def pick_menu_tab(texts: list[str], page_title: str, menu_type: str = "dinner") -> str | None:
-    """
-    Ask Claude to pick the button/tab most likely to reveal the target menu content.
-    Returns the chosen text, or None.
-    """
-    if not texts:
+def pick_next_action(
+    elements: list[dict],
+    current_url: str,
+    page_title: str,
+    menu_type: str = "dinner",
+) -> dict | None:
+    """Ask Claude to pick the element most likely to lead to the menu."""
+    if not elements:
         return None
 
     client = anthropic.Anthropic()
-    numbered = "\n".join(f'{i+1}. "{t}"' for i, t in enumerate(texts))
     nav_instruction = _menu_type_instruction(menu_type, "navigate")
+    numbered = "\n".join(
+        f'{i+1}. [{el["type"]}] "{el["text"]}"' + (f"  → {el['href']}" if el["href"] else "")
+        for i, el in enumerate(elements)
+    )
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=8,
-        messages=[{"role": "user", "content": f"""Du hjälper till att hitta rätt flik på en restaurangs menysida.
+        messages=[{"role": "user", "content": f"""Du hjälper till att navigera till rätt menysida på en restaurang.
 
-Sida: {page_title}
+Sida: {page_title} ({current_url})
+Letar efter: {nav_instruction}
 
 Klickbara element:
 {numbered}
 
-Välj det element som troligast visar: {nav_instruction} Om inget element verkar relevant, svara 0.
-
+Välj det element som troligast leder till menyn. Svara 0 om inget verkar relevant.
 Svara med ENBART siffran."""}],
     )
     choice = response.content[0].text.strip()
     try:
         idx = int(choice) - 1
-        if 0 <= idx < len(texts):
-            return texts[idx]
+        if 0 <= idx < len(elements):
+            chosen = elements[idx]
+            print(f"  Claude valde: [{chosen['type']}] {chosen['text']!r}")
+            return chosen
     except ValueError:
         pass
+    print("  Claude hittade inget relevant element.")
     return None
 
 
@@ -490,6 +485,8 @@ def scrape_dynamic(url: str, language: str = "sv", menu_type: str = "dinner") ->
 
 def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
     from playwright.sync_api import sync_playwright
+
+    MAX_NAV_STEPS = 3
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -509,7 +506,6 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
         )
         page = browser.new_page()
 
-        # Block images, fonts and media — we only need HTML text
         def _block_heavy(route):
             if route.request.resource_type in ("image", "font", "media"):
                 route.abort()
@@ -519,71 +515,81 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
         page.route("**/*", _block_heavy)
         page.goto(url, wait_until="networkidle", timeout=30000)
 
-        page_title = page.title() or ""
-        links = collect_nav_links(page, url)
-        print(f"  Hittade {len(links)} nav-länk(ar): {[l['text'] for l in links]}")
+        rows: list[tuple[str, str, str, str]] = []
+        html = ""
+        current_url = url
+        visited: set[str] = {url}
 
-        target = pick_menu_link(links, url, page_title, menu_type=menu_type)
-        if target:
-            print(f"  Claude valde: {target}")
-            try:
-                page.goto(target, wait_until="networkidle", timeout=30000)
-                page_title = page.title() or ""
-            except Exception as e:
-                print(f"  Navigering misslyckades: {e}")
-        else:
-            print("  Claude hittade ingen tydlig menylänk, skrapar startsidan.")
+        for step in range(MAX_NAV_STEPS):
+            html = page.content()
+            current_url = page.url
+            page_title = page.title() or ""
 
-        # Look for tabs/buttons to reveal the right menu section
-        tab_texts = collect_interactive_elements(page)
-        if tab_texts:
-            print(f"  Hittade {len(tab_texts)} knappar/flikar: {tab_texts}")
-            chosen = pick_menu_tab(tab_texts, page_title, menu_type=menu_type)
-            if chosen:
-                print(f"  Claude valde flik: {chosen!r}")
+            # PDF links take priority at every step
+            pdf_url = find_pdf_url(html, current_url, menu_type=menu_type)
+            if pdf_url:
+                print(f"  PDF-länk hittad: {pdf_url}")
                 try:
+                    pdf_rows = scrape_pdf_from_url(pdf_url, language=language, menu_type=menu_type)
+                    if pdf_rows:
+                        browser.close()
+                        return pdf_rows
+                    print("  PDF gav inga rätter, fortsätter med HTML")
+                except Exception as e:
+                    print(f"  PDF misslyckades: {e}")
+
+            rows = parse_menu_from_html(html, language=language, menu_type=menu_type)
+            print(f"  Steg {step + 1}/{MAX_NAV_STEPS}: {len(rows)} rätter på '{page_title}'")
+
+            if _is_menu_complete(rows, page_title, _html_text_snippet(html), menu_type=menu_type):
+                break
+
+            if step == MAX_NAV_STEPS - 1:
+                print(f"  Max navigeringssteg ({MAX_NAV_STEPS}) nådda.")
+                break
+
+            elements = collect_all_navigable_elements(page, current_url)
+            print(f"  Hittade {len(elements)} klickbara element")
+            action = pick_next_action(elements, current_url, page_title, menu_type=menu_type)
+
+            if not action:
+                break
+
+            try:
+                if action["href"]:
+                    target = urljoin(current_url, action["href"])
+                    if target in visited:
+                        print(f"  URL redan besökt, avbryter: {target}")
+                        break
+                    visited.add(target)
+                    if is_pdf_url(target):
+                        browser.close()
+                        return scrape_pdf_from_url(target, language=language, menu_type=menu_type)
+                    page.goto(target, wait_until="networkidle", timeout=30000)
+                else:
                     page.locator(
                         "button, [role='tab'], [role='button']"
-                    ).filter(has_text=chosen).first.click()
+                    ).filter(has_text=action["text"]).first.click()
                     page.wait_for_load_state("networkidle", timeout=10000)
-                except Exception as e:
-                    print(f"  Klick misslyckades: {e}")
-            else:
-                print("  Claude hittade ingen relevant flik.")
+            except Exception as e:
+                print(f"  Navigering misslyckades: {e}")
+                break
 
-        html = page.content()
-        current_url = page.url
         browser.close()
 
-    # If Playwright landed on a Cloudflare challenge, fall back to ScraperAPI JS rendering
     if _is_cloudflare_html(html):
         if SCRAPER_API_KEY:
-            print("  Cloudflare detekterat i renderad HTML — faller tillbaka på ScraperAPI …")
+            print("  Cloudflare detekterat — faller tillbaka på ScraperAPI …")
             try:
                 resp = fetch_html(url, render_js=True)
-                html = resp.text
-                current_url = url
+                return parse_menu_from_html(resp.text, language=language, menu_type=menu_type)
             except Exception as exc:
                 print(f"  ScraperAPI JS-fallback misslyckades: {exc}")
-                return []
         else:
             print("  Cloudflare detekterat men SCRAPER_API_KEY saknas — ger upp.")
-            return []
+        return []
 
-    # Check for PDF links in the rendered HTML (e.g. Squarespace sites where
-    # PDF links are only injected after JS renders)
-    pdf_url = find_pdf_url(html, current_url, menu_type=menu_type)
-    if pdf_url:
-        print(f"  PDF-länk hittad i renderad HTML: {pdf_url}")
-        try:
-            rows = scrape_pdf_from_url(pdf_url, language=language, menu_type=menu_type)
-            if rows:
-                return rows
-            print("  PDF gav inga rätter, faller tillbaka på HTML-parsning")
-        except Exception as e:
-            print(f"  PDF-skrapning misslyckades: {e}")
-
-    return parse_menu_from_html(html, language=language, menu_type=menu_type)
+    return rows
 
 
 # ---------------------------------------------------------------------------
