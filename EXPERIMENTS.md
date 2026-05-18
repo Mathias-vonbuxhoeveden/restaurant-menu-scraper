@@ -10,6 +10,8 @@
 | 2 | 2026-05-18 | Reliabilitet: JSON-retry, nav-prompt, statisk-HTML-priströskel | 95.8% | 98.5% | ~92.6% | e804180 |
 | 3 | 2026-05-18 | Filtrera display:none + Elementor-dolda sektioner i BeautifulSoup | 100.0% | 98.5% | 96.6% | 5add54a |
 
+**Ted (inom kommendoren-caset):** 74.5% (iter 0) → 88.4% (iter 1a, sides/såser fixade) → 100.0% (iter 3, dold HTML-sektion filtrerad)
+
 *) Tradition-aggregat fluktuerar pga LLM-varians i PDF-extraktionen; 76.8%–98.5% sett i olika körningar
 
 ---
