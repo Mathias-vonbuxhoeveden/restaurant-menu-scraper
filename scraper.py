@@ -199,6 +199,21 @@ Inkludera INTE: tillbehör utan eget pris, pizza-baser eller pizza-typer (t.ex. 
 Returnera ENBART det råa JSON-arrayet — ingen markdown, inga backticks, ingen förklaring."""
 
 
+def _parse_json_array(raw: str) -> list[dict]:
+    """Parse a JSON array from a model response, extracting the [...] block if needed."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+    start = raw.find("[")
+    end = raw.rfind("]")
+    if start != -1 and end > start:
+        raw = raw[start : end + 1]
+    return json.loads(raw)
+
+
 def extract_with_claude(text: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
     """Extract menu rows from HTML text using Claude Haiku."""
     client = anthropic.Anthropic()
@@ -209,21 +224,22 @@ def extract_with_claude(text: str, language: str = "sv", menu_type: str = "dinne
 TEXT:
 {text}"""
 
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=8192,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = response.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-
-    items = json.loads(raw)
-    return [(item["name"], item["price"], item["category"], item["description"]) for item in items]
+    messages = [{"role": "user", "content": prompt}]
+    for attempt in range(2):
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=8192,
+            messages=messages,
+        )
+        raw = response.content[0].text
+        try:
+            items = _parse_json_array(raw)
+            return [(item["name"], item["price"], item["category"], item["description"]) for item in items]
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            if attempt == 0:
+                print(f"  [parse] JSON-fel, försöker igen: {e}")
+            else:
+                raise
 
 
 def parse_pdf(pdf_bytes: bytes, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
@@ -235,37 +251,31 @@ def parse_pdf(pdf_bytes: bytes, language: str = "sv", menu_type: str = "dinner")
     b64 = base64.standard_b64encode(pdf_bytes).decode()
 
     client = anthropic.Anthropic()
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=8192,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "document",
-                    "source": {
-                        "type": "base64",
-                        "media_type": "application/pdf",
-                        "data": b64,
-                    },
-                },
-                {
-                    "type": "text",
-                    "text": _build_extraction_prompt(menu_type),
-                },
-            ],
-        }],
-    )
-
-    raw = response.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-
-    items = json.loads(raw)
-    return [(item["name"], item["price"], item["category"], item["description"]) for item in items]
+    pdf_message = {
+        "role": "user",
+        "content": [
+            {
+                "type": "document",
+                "source": {"type": "base64", "media_type": "application/pdf", "data": b64},
+            },
+            {"type": "text", "text": _build_extraction_prompt(menu_type)},
+        ],
+    }
+    for attempt in range(2):
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=8192,
+            messages=[pdf_message],
+        )
+        raw = response.content[0].text
+        try:
+            items = _parse_json_array(raw)
+            return [(item["name"], item["price"], item["category"], item["description"]) for item in items]
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            if attempt == 0:
+                print(f"  PDF: JSON-fel, försöker igen: {e}")
+            else:
+                raise
 
 
 def scrape_pdf_from_url(pdf_url: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
@@ -463,7 +473,9 @@ Letar efter: {nav_instruction}
 Klickbara element:
 {numbered}
 
-Välj det element som troligast leder till menyn. Svara 0 om inget verkar relevant.
+Välj det element som troligast leder till menyn eller till en sida med menyinformation.
+Svara 0 BARA om alla element uppenbart leder bort från mat/meny (t.ex. bokningar, kontakt, events, drycker, press).
+Om sidan är en restaurangs landningssida utan tydlig menylänk, välj det element som troligast leder vidare till restaurangens egna sidor.
 Svara med ENBART siffran."""}],
     )
     choice = response.content[0].text.strip()
@@ -650,10 +662,15 @@ def main() -> None:
                 print(f"  PDF-skrapning misslyckades: {e}")
 
     # Step 3: Static HTML had menu rows (no PDF needed)
-    if rows:
+    # Require at least one priced row — nav-link halluciations never have prices
+    rows_with_price = [r for r in rows if str(r[1]).strip()]
+    if rows_with_price:
         rows_to_excel(rows, args.output)
         return
-    print("  Hittade inga rätter i statisk HTML.")
+    if rows:
+        print("  Statisk HTML: rätter utan pris — fortsätter till Playwright.")
+    else:
+        print("  Hittade inga rätter i statisk HTML.")
 
     # Step 4: Playwright for JS-rendered pages
     try:
