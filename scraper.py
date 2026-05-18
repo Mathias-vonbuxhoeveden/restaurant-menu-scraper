@@ -160,8 +160,8 @@ MENU_TYPES: dict[str, dict[str, str]] = {
             "Exkludera: lunchrätter, dagens rätt, veckomenyer, drycker, viner, öl, shots, "
             "tillbehör och sides (t.ex. pommes frites, potatisgratäng, sallad som bilaga, brödkorg) — även om de har eget pris, "
             "såser och smör (t.ex. bearnaise, café de paris smör, rödvinssky, grönpepparsås) — även om de har eget pris, "
-            "poster vars namn eller beskrivning innehåller uppfödningstermer ('grain fed', 'grass fed', 'milk fed') "
-            "eller köttkvalitetsklasser ('USDA Prime', 'USDA Choice') — dessa är sortimentsbeskrivningar, inte rätter, "
+            "rena köttkvaliteter/styckdelar listade med ursprungsland eller uppfödningsmetod utan tillagningsmetod i namnet "
+            "(t.ex. 'Ryggbiff, USDA Prime, Nebraska, grain fed'), "
             "stora delningsrätter som enbart säljs som hel portion för flera. "
             "Om en rätt har flera prisalternativ (t.ex. liten/stor), använd det lägsta priset. "
             "Om sidan saknar tydlig uppdelning mellan lunch och middag, extrahera alla maträtter med pris."
@@ -199,14 +199,6 @@ Inkludera INTE: tillbehör utan eget pris, pizza-baser eller pizza-typer (t.ex. 
 Returnera ENBART det råa JSON-arrayet — ingen markdown, inga backticks, ingen förklaring."""
 
 
-_MEAT_SELECTION_CATEGORY_RE = re.compile(r"kött\s+för\s+", re.IGNORECASE)
-
-
-def _filter_items(items: list[dict]) -> list[dict]:
-    """Remove items from meat-selection order sections (e.g. 'Kött för en person')."""
-    return [it for it in items if not _MEAT_SELECTION_CATEGORY_RE.search(it.get("category", ""))]
-
-
 def extract_with_claude(text: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
     """Extract menu rows from HTML text using Claude Haiku."""
     client = anthropic.Anthropic()
@@ -230,7 +222,7 @@ TEXT:
             raw = raw[4:]
         raw = raw.strip()
 
-    items = _filter_items(json.loads(raw))
+    items = json.loads(raw)
     return [(item["name"], item["price"], item["category"], item["description"]) for item in items]
 
 
@@ -272,7 +264,7 @@ def parse_pdf(pdf_bytes: bytes, language: str = "sv", menu_type: str = "dinner")
             raw = raw[4:]
         raw = raw.strip()
 
-    items = _filter_items(json.loads(raw))
+    items = json.loads(raw)
     return [(item["name"], item["price"], item["category"], item["description"]) for item in items]
 
 
