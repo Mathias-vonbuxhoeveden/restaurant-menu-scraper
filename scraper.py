@@ -400,7 +400,7 @@ def collect_all_navigable_elements(page, base_url: str, max_items: int = 25) -> 
 
     # Divi hides column links in a JS variable — extract those first
     for item in _extract_divi_links(page, base_url):
-        key = item["text"].lower()
+        key = item["href"]
         if key not in seen:
             seen.add(key)
             elements.append(item)
@@ -412,9 +412,8 @@ def collect_all_navigable_elements(page, base_url: str, max_items: int = 25) -> 
             text = (a.inner_text() or "").strip()
             href = a.get_attribute("href") or ""
             full = urljoin(base_url, href)
-            key = text.lower()
-            if text and href and key not in seen and 2 <= len(text) <= 60:
-                seen.add(key)
+            if text and href and full not in seen and 2 <= len(text) <= 60:
+                seen.add(full)
                 el_type = "pdf" if is_pdf_url(full) else "link"
                 elements.append({"text": text, "href": href, "type": el_type})
         except Exception:
