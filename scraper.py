@@ -300,6 +300,16 @@ def parse_menu_from_html(html: str, language: str = "sv", menu_type: str = "dinn
     for tag in soup(["nav", "footer", "header", "script", "style"]):
         tag.decompose()
 
+    # Remove elements hidden via inline style
+    for tag in soup.find_all(style=re.compile(r"display\s*:\s*none", re.I)):
+        tag.decompose()
+
+    # Remove Elementor sections hidden on all device sizes (invisible to all users)
+    for tag in soup.find_all(class_=re.compile(r"elementor-hidden-desktop")):
+        classes = tag.get("class", [])
+        if {"elementor-hidden-desktop", "elementor-hidden-tablet", "elementor-hidden-mobile"}.issubset(set(classes)):
+            tag.decompose()
+
     text = soup.get_text(separator="\n", strip=True)
     if not text.strip():
         print("  [parse] Sidan gav ingen text efter rensning")

@@ -8,6 +8,7 @@
 | 1a | 2026-05-18 | Prompt: exkludera sides/såser med eget pris | 95.8% | — | — | 31c96ec |
 | 1b | 2026-05-18 | Nav-dedup: byt text→URL, fixar Pelikan+Tranan | 95.8% | 91.8%* | 96.6% | 3492fbb |
 | 2 | 2026-05-18 | Reliabilitet: JSON-retry, nav-prompt, statisk-HTML-priströskel | 95.8% | 98.5% | ~92.6% | e804180 |
+| 3 | 2026-05-18 | Filtrera display:none + Elementor-dolda sektioner i BeautifulSoup | 100.0% | 98.5% | 96.6% | — |
 
 *) Tradition-aggregat fluktuerar pga LLM-varians i PDF-extraktionen; 76.8%–98.5% sett i olika körningar
 
@@ -39,6 +40,12 @@
 - Tranan: 0% → 92.6% (hittade "VÅR RESTAURANG" → restaurang-sida → PDF)
 - Aggregat tradition: 77.8% → ~91.8%; tranan: 69.7% → 96.6%
 
+### Iter 3 — Filtrera dolda HTML-element (2026-05-18)
+- Rotorsak Ted: Teds startsida innehåller en dold "Kött Bonanza"-helgmeny (`display:none` via Elementor-klasser). BeautifulSoup ignorerar CSS och extraherar texten ändå.
+- Fix: i `parse_menu_from_html`, ta bort element med inline `style="display:none"` OCH element med alla tre Elementor-klasserna `elementor-hidden-desktop + tablet + mobile` (= dold på alla skärmstorlekar).
+- Ted: 5–7 hallucinerade → **0**. Kommendoren-aggregat: 95.8% → **100.0%**.
+- Tradition/Tranan opåverkade.
+
 ### Iter 2 — Reliabilitet: tre parallella fixes (2026-05-18)
 - **JSON-retry**: `_parse_json_array()` extraherar `[...]`-blocket robust; båda extraktionsfunktioner
   retryar API-anrop en gång vid `JSONDecodeError`. Fixar sporadisk 0% för Pelikan och Tradition.
@@ -57,6 +64,7 @@
 - **LLM-varians är signifikant** för site-specifika val (pick_next_action) och JSON-generering. Retry-logik och mer toleranta prompts hjälper.
 - **Prompt-regler fungerar bra** för semantiska uteslutningar (sås/sides) men sämre för syntaktiska mönster — modellen kan kringgå keyword-regler.
 - **Python-postprocessing för saker som är deterministiska att identifiera** (tex. kategorinamn) är mer tillförlitlig än LLM-regler, MEN kräver att regeln är verkligt generaliserbar.
+- **BeautifulSoup ignorerar CSS**: `display:none`-element syns inte för besökare men extraheras ändå. Filtrera bort inline `display:none` och ramverksspecifika hidden-klasser (Elementor) i parse-steget.
 
 ---
 
