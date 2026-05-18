@@ -158,13 +158,17 @@ MENU_TYPES: dict[str, dict[str, str]] = {
             "Inkludera: förätter, huvudrätter, desserter, barnmeny, "
             "delningsrätter där man kan beställa för en person (använd då priset per person). "
             "Exkludera: lunchrätter, dagens rätt, veckomenyer, drycker, viner, öl, shots, "
-            "tillbehör utan eget rättspris, stora delningsrätter som enbart säljs som hel portion för flera. "
+            "tillbehör och sides (t.ex. pommes frites, potatisgratäng, sallad som bilaga, brödkorg) — även om de har eget pris, "
+            "såser och smör (t.ex. bearnaise, café de paris smör, rödvinssky, grönpepparsås) — även om de har eget pris, "
+            "rena köttkvaliteter/styckdelar listade med ursprungsland eller uppfödningsmetod utan tillagningsmetod i namnet "
+            "(t.ex. 'Ryggbiff, USDA Prime, Nebraska, grain fed'), "
+            "stora delningsrätter som enbart säljs som hel portion för flera. "
             "Om en rätt har flera prisalternativ (t.ex. liten/stor), använd det lägsta priset. "
             "Om sidan saknar tydlig uppdelning mellan lunch och middag, extrahera alla maträtter med pris."
         ),
         "navigate": (
             'middagsmeny / à la carte. Prioritera etiketter som "meny", "mat", "à la carte", "dinner", "food". '
-            'Undvik: lunchmeny, dagens lunch, veckans meny, drycker, events, specialmenyer.'
+            'Undvik: lunchmeny, dagens lunch, veckans meny, drycker, events, specialmenyer, sällskapsmeny, festmeny, gruppmenyer, bröllop, bankett.'
         ),
     },
 }
@@ -409,9 +413,10 @@ def collect_all_navigable_elements(page, base_url: str, max_items: int = 25) -> 
             href = a.get_attribute("href") or ""
             full = urljoin(base_url, href)
             key = text.lower()
-            if text and href and not is_pdf_url(full) and key not in seen and 2 <= len(text) <= 60:
+            if text and href and key not in seen and 2 <= len(text) <= 60:
                 seen.add(key)
-                elements.append({"text": text, "href": href, "type": "link"})
+                el_type = "pdf" if is_pdf_url(full) else "link"
+                elements.append({"text": text, "href": href, "type": el_type})
         except Exception:
             pass
 
@@ -525,19 +530,6 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
             current_url = page.url
             page_title = page.title() or ""
 
-            # PDF links take priority at every step
-            pdf_url = find_pdf_url(html, current_url, menu_type=menu_type)
-            if pdf_url:
-                print(f"  PDF-länk hittad: {pdf_url}")
-                try:
-                    pdf_rows = scrape_pdf_from_url(pdf_url, language=language, menu_type=menu_type)
-                    if pdf_rows:
-                        browser.close()
-                        return pdf_rows
-                    print("  PDF gav inga rätter, fortsätter med HTML")
-                except Exception as e:
-                    print(f"  PDF misslyckades: {e}")
-
             rows = parse_menu_from_html(html, language=language, menu_type=menu_type)
             print(f"  Steg {step + 1}/{MAX_NAV_STEPS}: {len(rows)} rätter på '{page_title}'")
 
@@ -556,15 +548,22 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
                 break
 
             try:
-                if action["href"]:
+                if action["type"] == "pdf":
                     target = urljoin(current_url, action["href"])
+                    print(f"  Claude valde PDF: {target}")
+                    browser.close()
+                    return scrape_pdf_from_url(target, language=language, menu_type=menu_type)
+                elif action["href"]:
+                    target = urljoin(current_url, action["href"])
+                    # Pre-check: if the resolved URL is already a PDF, skip Playwright navigation
+                    if is_pdf_url(target):
+                        print(f"  Länk pekar direkt på PDF: {target}")
+                        browser.close()
+                        return scrape_pdf_from_url(target, language=language, menu_type=menu_type)
                     if target in visited:
                         print(f"  URL redan besökt, avbryter: {target}")
                         break
                     visited.add(target)
-                    if is_pdf_url(target):
-                        browser.close()
-                        return scrape_pdf_from_url(target, language=language, menu_type=menu_type)
                     page.goto(target, wait_until="networkidle", timeout=30000)
                 else:
                     page.locator(
@@ -572,6 +571,15 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
                     ).filter(has_text=action["text"]).first.click()
                     page.wait_for_load_state("networkidle", timeout=10000)
             except Exception as e:
+                exc_str = str(e)
+                # Playwright triggers a download when navigating to a PDF — extract URL and fetch directly
+                if "Download is starting" in exc_str:
+                    pdf_match = re.search(r'navigating to "([^"]+)"', exc_str)
+                    pdf_candidate = pdf_match.group(1) if pdf_match else page.url
+                    if pdf_candidate:
+                        print(f"  PDF-download detekterad — hämtar direkt: {pdf_candidate}")
+                        browser.close()
+                        return scrape_pdf_from_url(pdf_candidate, language=language, menu_type=menu_type)
                 print(f"  Navigering misslyckades: {e}")
                 break
 
