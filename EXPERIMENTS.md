@@ -13,9 +13,11 @@
 | 3 | 2026-05-18 | Filtrera display:none + Elementor-dolda sektioner i BeautifulSoup | — | 100.0% | — | 98.5% | 96.6% | 5add54a |
 | **3★** | **2026-05-19** | **Re-baseline: lilla ego GT tillagd (ingen kod-ändring)** | — | **100.0%** | **79.7%** | **98.5%** | **96.6%** | **5add54a** |
 | 4 | 2026-05-19 | Extract-prompt: lägg till snacks/aptitretare/ostar i include-listan | — | 94.6% | 94.3% | 98.5% | 94.1% | 8e5c81c |
-| **5★** | **2026-05-19** | **Nav-fix: skip is_menu_complete vid 0 rätter + MAX_NAV_STEPS 3→4; Crispy GT tillagd** | **85.9%** | **94.6%** | **97.1%** | **98.5%** | **94.1%** | — |
+| **5★** | **2026-05-19** | **Nav-fix: skip is_menu_complete vid 0 rätter + MAX_NAV_STEPS 3→4; Crispy GT tillagd** | **85.9%** | **94.6%** | **97.1%** | **98.5%** | **94.1%** | bbc0e12 |
+| 6 | 2026-05-19 | Nav-fix: kontrollera PDF-länkar i Playwright-rendrad HTML efter varje steg | ~82%† | 94.6% | 94.3% | 98.5% | 94.1% | — |
 
 *) Tradition-aggregat fluktuerar pga LLM-varians i PDF-extraktionen; 76.8%–98.5% sett i olika körningar
+†) Crispy-aggregat varierar 80–86% pga LLM-varians i PDF-extraktion; navigeringen är nu deterministisk
 
 ---
 
@@ -53,6 +55,12 @@
 - **Statisk HTML-priströskel**: `main()` avslutar inte vid statisk HTML om ingen rad har pris.
   Navigeringslänkar som hallucineras (t.ex. "Meny" utan pris) blockar inte längre Playwright-fallback.
 - Aggregat tradition: **98.5%** stabilt; tranan ~92.6% (kvar LLM-varians i nav-steget)
+
+### Iter 6 — PDF-check i Playwright-loop (2026-05-19)
+- **Rotorsak (kvarstående prod-problem):** Även med `MAX_NAV_STEPS=4` och `if rows and is_menu_complete` kunde Claude navigera fel (t.ex. till HTML-sida istf. PDF) och köra slut på steg. Navigeringen var fortfarande LLM-beroende.
+- **Fix:** I varje Playwright-steg, om `rows=[]`, anropa `find_pdf_url(html, current_url)` direkt på den rendrade HTML:en. Om PDF hittas — hämta och scrapea omedelbart, utan ytterligare Claude-navigation.
+- **Resultat:** PDF hittas nu deterministiskt i steg 1 (landningssidan innehåller PDF-länken efter JS-rendering). Totalt 2 API-anrop vs tidigare 8+. Navigering oberoende av LLM-val.
+- Crispy-aggregat ~82% (LLM-varians i PDF-extraktion, ej navigering). Övriga testfall opåverkade.
 
 ### Iter 5★ — Nav-fix + Crispy GT tillagd (2026-05-19)
 - **Rotorsak (prod-fel 0 rätter):** `_is_menu_complete` anropades även när `rows=[]`. Claude svarade 'done' på mellansidor (t.ex. Crispys restauranglistsida) utan rätter → navigeringsloopen bröt för tidigt → 0 rätter returnerade.

@@ -567,6 +567,16 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
             if rows and _is_menu_complete(rows, page_title, _html_text_snippet(html), menu_type=menu_type):
                 break
 
+            # If no rows from HTML, check for PDF links on this rendered page and scrape directly.
+            # This bypasses LLM variance in link selection for the common case where a navigated
+            # page contains a menu PDF link.
+            if not rows:
+                pdf_url = find_pdf_url(html, current_url, menu_type=menu_type)
+                if pdf_url:
+                    print(f"  PDF hittad på sidan — hämtar direkt: {pdf_url}")
+                    browser.close()
+                    return scrape_pdf_from_url(pdf_url, language=language, menu_type=menu_type)
+
             if step == MAX_NAV_STEPS - 1:
                 print(f"  Max navigeringssteg ({MAX_NAV_STEPS}) nådda.")
                 break
