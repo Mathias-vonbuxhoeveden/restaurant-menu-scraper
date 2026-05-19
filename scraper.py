@@ -522,7 +522,7 @@ def scrape_dynamic(url: str, language: str = "sv", menu_type: str = "dinner") ->
 def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
     from playwright.sync_api import sync_playwright
 
-    MAX_NAV_STEPS = 3
+    MAX_NAV_STEPS = 4
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -564,7 +564,7 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
             rows = parse_menu_from_html(html, language=language, menu_type=menu_type)
             print(f"  Steg {step + 1}/{MAX_NAV_STEPS}: {len(rows)} rätter på '{page_title}'")
 
-            if _is_menu_complete(rows, page_title, _html_text_snippet(html), menu_type=menu_type):
+            if rows and _is_menu_complete(rows, page_title, _html_text_snippet(html), menu_type=menu_type):
                 break
 
             if step == MAX_NAV_STEPS - 1:
