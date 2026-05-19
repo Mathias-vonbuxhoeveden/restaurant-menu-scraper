@@ -164,6 +164,8 @@ MENU_TYPES: dict[str, dict[str, str]] = {
         "extract": (
             "Extrahera middagsmenyn / à la carte. "
             "Inkludera: förätter, huvudrätter, desserter, barnmeny, "
+            "snacks och aptitretare (t.ex. oliver, nötter, bröd, ostron, charkuterier listade som egna poster), "
+            "ostar och ostbrickor, "
             "delningsrätter där man kan beställa för en person (använd då priset per person). "
             "Exkludera: lunchrätter, dagens rätt, veckomenyer, drycker, viner, öl, shots, "
             "tillbehör och sides (t.ex. pommes frites, potatisgratäng, sallad som bilaga, brödkorg) — även om de har eget pris, "
