@@ -31,6 +31,14 @@ DEBUG = False  # set to True via --debug flag
 # Only one Playwright/Chromium instance at a time to cap RAM usage
 _playwright_semaphore = threading.Semaphore(1)
 
+# Cap concurrent Claude API calls to avoid 529 Overloaded errors under parallel load
+_api_semaphore = threading.Semaphore(5)
+
+
+def _claude_create(client: anthropic.Anthropic, **kwargs):
+    with _api_semaphore:
+        return client.messages.create(**kwargs)
+
 SCRAPER_API_KEY = os.environ.get("SCRAPER_API_KEY", "")
 
 
@@ -128,7 +136,7 @@ def find_pdf_url(html: str, base_url: str, menu_type: str = "dinner") -> str | N
         for i, p in enumerate(pdfs)
     )
     nav_instruction = _menu_type_instruction(menu_type, "navigate")
-    response = client.messages.create(
+    response = _claude_create(client,
         model="claude-haiku-4-5-20251001",
         max_tokens=8,
         messages=[{"role": "user", "content": f"""En restaurangsida har flera PDF-menyer. Välj den som innehåller: {nav_instruction}
@@ -226,7 +234,7 @@ TEXT:
 
     messages = [{"role": "user", "content": prompt}]
     for attempt in range(2):
-        response = client.messages.create(
+        response = _claude_create(client,
             model="claude-haiku-4-5-20251001",
             max_tokens=8192,
             messages=messages,
@@ -262,7 +270,7 @@ def parse_pdf(pdf_bytes: bytes, language: str = "sv", menu_type: str = "dinner")
         ],
     }
     for attempt in range(2):
-        response = client.messages.create(
+        response = _claude_create(client,
             model="claude-sonnet-4-6",
             max_tokens=8192,
             messages=[pdf_message],
@@ -364,7 +372,7 @@ def _is_menu_complete(
         content = f"Inga rätter extraherade. Sidans text:\n{text_snippet}"
 
     client = anthropic.Anthropic()
-    response = client.messages.create(
+    response = _claude_create(client,
         model="claude-haiku-4-5-20251001",
         max_tokens=8,
         messages=[{"role": "user", "content": f"""Du hjälper till att avgöra om rätt menysida är nådd.
@@ -472,7 +480,7 @@ def pick_next_action(
         f'{i+1}. [{el["type"]}] "{el["text"]}"' + (f"  → {el['href']}" if el["href"] else "")
         for i, el in enumerate(elements)
     )
-    response = client.messages.create(
+    response = _claude_create(client,
         model="claude-haiku-4-5-20251001",
         max_tokens=8,
         messages=[{"role": "user", "content": f"""Du hjälper till att navigera till rätt menysida på en restaurang.

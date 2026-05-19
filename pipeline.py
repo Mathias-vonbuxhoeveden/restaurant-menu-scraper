@@ -251,6 +251,7 @@ def main() -> None:
     parser.add_argument("--language", default="sv", help="Föredraget språk för beskrivningar (default: sv)")
     parser.add_argument("--menu-type", default="dinner", help="Typ av meny att skrapa (default: dinner)")
     parser.add_argument("--output", default=None, help="Sökväg för output-fil (default: <Prospektnamn>.xlsx)")
+    parser.add_argument("--max-workers", type=int, default=10, help="Max antal parallella scrapningar (default: 10)")
     args = parser.parse_args()
 
     prospect_name = args.name.strip()
@@ -285,7 +286,7 @@ def main() -> None:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     results: dict[str, list] = {}
-    with ThreadPoolExecutor(max_workers=len(all_restaurants)) as executor:
+    with ThreadPoolExecutor(max_workers=min(len(all_restaurants), args.max_workers)) as executor:
         futures = {
             executor.submit(scrape_one, name, query): name
             for name, query in all_restaurants
