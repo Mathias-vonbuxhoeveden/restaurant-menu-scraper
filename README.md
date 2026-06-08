@@ -1,33 +1,33 @@
 # Restaurant Menu Scraper
 
-Skrapar middagsmenyer från restaurangers webbsidor och exporterar dem till Excel. Används som underlag för restaurangprisövervakning.
+Scrapes dinner menus from restaurant websites and exports them to Excel. Used as input for restaurant price monitoring.
 
 ---
 
-## Vad det gör
+## What it does
 
-Givet en restaurangs URL hämtar scrapern menyn oavsett hur sidan är uppbyggd:
+Given a restaurant URL, the scraper retrieves the menu regardless of how the page is built:
 
-1. **PDF-länk på sidan** — hittar och laddar ned PDF:en, extraherar text och skickar till Claude Sonnet
-2. **Statisk HTML** — parsar HTML med BeautifulSoup, skickar text till Claude Haiku
-3. **JS-renderad sida** — om statisk HTML ger för lite, startar Playwright, navigerar till rätt menysida och kör steg 1–2 på den rendrade HTML:en
+1. **PDF link on the page** — finds and downloads the PDF, extracts text and sends it to Claude Sonnet
+2. **Static HTML** — parses HTML with BeautifulSoup, sends text to Claude Haiku
+3. **JS-rendered page** — if static HTML yields too little, launches Playwright, navigates to the correct menu page and runs steps 1–2 on the rendered HTML
 
-Claude avgör vilka PDF-er, flikar och nav-element som leder till middagsmenyn, och extraherar rätterna till strukturerad JSON.
+Claude decides which PDFs, tabs and nav elements lead to the dinner menu, and extracts the dishes into structured JSON.
 
-**Output:** Excel-fil med kolumnerna `Name`, `Price`, `Category`, `Description`.
+**Output:** Excel file with columns `Name`, `Price`, `Category`, `Description`.
 
 ---
 
-## Filer
+## Files
 
-| Fil | Syfte |
-|-----|-------|
-| `scraper.py` | Lågnivå-skrapning för en enskild URL — den enda filen som ändras i optimeringsloopen |
-| `pipeline.py` | Söker upp URL:er via SerpAPI, kör parallell skrapning, skriver multi-sheet Excel |
-| `evaluate.py` | Beräknar precision/recall/F1 mot ground-truth Excel-filer |
-| `run_eval.py` | CLI-wrapper för evaluate.py — kör ett eller alla testfall |
-| `requirements.txt` | Python-beroenden |
-| `EXPERIMENTS.md` | Experimentlogg med F1-historik och lärdomar per iteration |
+| File | Purpose |
+|------|---------|
+| `scraper.py` | Low-level scraping for a single URL — the only file modified in the optimisation loop |
+| `pipeline.py` | Looks up URLs via SerpAPI, runs parallel scraping, writes multi-sheet Excel |
+| `evaluate.py` | Computes precision/recall/F1 against ground-truth Excel files |
+| `run_eval.py` | CLI wrapper for evaluate.py — runs one or all test cases |
+| `requirements.txt` | Python dependencies |
+| `EXPERIMENTS.md` | Experiment log with F1 history and learnings per iteration |
 
 ---
 
@@ -40,26 +40,26 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
-### Miljövariabler
+### Environment variables
 
-| Variabel | Krävs | Syfte |
-|----------|-------|-------|
-| `ANTHROPIC_API_KEY` | Alltid | Claude-anrop för extraktion och navigering |
-| `SERPAPI_KEY` | För `pipeline.py` | URL-sökning via Google |
-| `SCRAPER_API_KEY` | Valfritt | Fallback vid Cloudflare-blockering |
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `ANTHROPIC_API_KEY` | Always | Claude calls for extraction and navigation |
+| `SERPAPI_KEY` | For `pipeline.py` | URL lookup via Google |
+| `SCRAPER_API_KEY` | Optional | Fallback when blocked by Cloudflare |
 
 ---
 
-## Användning
+## Usage
 
-### Skrapa en enskild restaurang
+### Scrape a single restaurant
 
 ```bash
-python scraper.py --url https://restaurang.se
-python scraper.py --url https://restaurang.se --output result.xlsx --debug
+python scraper.py --url https://example-restaurant.com
+python scraper.py --url https://example-restaurant.com --output result.xlsx --debug
 ```
 
-### Skrapa prospekt + konkurrenter (pipeline)
+### Scrape a prospect + competitors (pipeline)
 
 ```bash
 python pipeline.py \
@@ -68,83 +68,83 @@ python pipeline.py \
   --competitors "Calle P, Bistro Arsenalen, Restaurang Pava"
 ```
 
-Output: `Ricordi.xlsx` med en flik per restaurang.
+Output: `Ricordi.xlsx` with one sheet per restaurant.
 
 ---
 
-## Utvärdering
+## Evaluation
 
-Testfallen ligger i `tests/cases/<namn>/` och innehåller:
-- `payload.json` — lista med restauranger och URL:er att skrapa
-- `ground_truth.xlsx` — facit att mäta mot (Name, Price, Category per restaurang)
+Test cases live in `tests/cases/<name>/` and contain:
+- `payload.json` — list of restaurants and URLs to scrape
+- `ground_truth.xlsx` — reference data to measure against (Name, Price, Category per restaurant)
 
 ```bash
-# Alla testfall
+# All test cases
 python run_eval.py --all
 
-# Ett specifikt testfall
-python run_eval.py --case lilla\ ego
+# A specific test case
+python run_eval.py --case "lilla ego"
 
-# En specifik restaurang inom ett testfall
+# A specific restaurant within a test case
 python run_eval.py --case tradition --only "Pelikan"
 ```
 
-Resultatet skrivs till `eval_report.json` och skrivs ut i terminalen med per-restaurang F1 och detaljerade diff-tabeller.
+Results are written to `eval_report.json` and printed to the terminal with per-restaurant F1 and detailed diff tables.
 
-### Testfall
+### Test cases
 
-| Testfall | Restauranger | Vad det testar |
-|----------|-------------|----------------|
-| `kommendoren` | Kommendören, Aubergine, Ted | Statisk HTML, dolda Elementor-sektioner |
-| `tradition` | Tradition, Tennstopet, Pelikan, Bistro Bestick | PDF-menyer, nav till PDF-länk |
-| `tranan` | Tranan, Tennstopet | Flerstegsnavigering till PDF |
-| `lilla ego` | Lilla Ego, Haggans, ART, Vineriet | Blandad HTML + PDF, snacks-kategorier |
-| `Crispy kvarnholmen` | Crispy Pizza Bistro, Don Felice, Kvarnholmen | Djup navigering (3 hopp till PDF) |
+| Test case | Restaurants | What it covers |
+|-----------|-------------|----------------|
+| `kommendoren` | Kommendören, Aubergine, Ted | Static HTML, hidden Elementor sections |
+| `tradition` | Tradition, Tennstopet, Pelikan, Bistro Bestick | PDF menus, navigation to PDF link |
+| `tranan` | Tranan, Tennstopet | Multi-step navigation to PDF |
+| `lilla ego` | Lilla Ego, Haggans, ART, Vineriet | Mixed HTML + PDF, snacks categories |
+| `Crispy kvarnholmen` | Crispy Pizza Bistro, Don Felice, Kvarnholmen | Deep navigation (3 hops to PDF) |
 | `Hantverket` | Hantverket | — |
 
 ---
 
-## Arkitektur
+## Architecture
 
-### Scraper-flöde (`scraper.py`)
+### Scraper flow (`scraper.py`)
 
 ```
 URL
- ├─ är PDF? → scrape_pdf_from_url() → Claude Sonnet-extraktion
+ ├─ is PDF? → scrape_pdf_from_url() → Claude Sonnet extraction
  │
  ├─ scrape_static_html()
- │   ├─ find_pdf_url() → scrape_pdf_from_url()  (om PDF-länk hittas)
+ │   ├─ find_pdf_url() → scrape_pdf_from_url()  (if PDF link found)
  │   └─ parse_menu_from_html() → extract_with_claude()  (Claude Haiku)
  │
- └─ om < 5 rätter: scrape_dynamic() (Playwright)
-     ├─ vid varje nav-steg: find_pdf_url() på rendrad HTML
-     ├─ pick_next_action() → Claude Haiku väljer nästa klick
-     └─ samma PDF/HTML-extraktion som ovan
+ └─ if < 5 dishes: scrape_dynamic() (Playwright)
+     ├─ at each nav step: find_pdf_url() on rendered HTML
+     ├─ pick_next_action() → Claude Haiku picks next click
+     └─ same PDF/HTML extraction as above
 ```
 
-### Modellval
+### Model selection
 
-| Uppgift | Modell |
-|---------|--------|
-| Extrahera meny från HTML | `claude-haiku-4-5` |
-| Extrahera meny från PDF | `claude-sonnet-4-6` |
-| Välj PDF-länk / nav-element / flik | `claude-haiku-4-5` |
+| Task | Model |
+|------|-------|
+| Extract menu from HTML | `claude-haiku-4-5` |
+| Extract menu from PDF | `claude-sonnet-4-6` |
+| Choose PDF link / nav element / tab | `claude-haiku-4-5` |
 
 ### Concurrency
 
-- Max 1 Playwright-instans åt gången (`threading.Semaphore(1)`) — håller nere RAM
-- Max 5 parallella Claude API-anrop (`threading.Semaphore(5)`) — undviker 529-fel vid parallell pipeline-körning
+- Max 1 Playwright instance at a time (`threading.Semaphore(1)`) — keeps RAM usage low
+- Max 5 concurrent Claude API calls (`threading.Semaphore(5)`) — avoids 529 errors under parallel pipeline load
 
 ---
 
-## Optimeringsloop
+## Optimisation loop
 
-F1-score mot ground truth driver iterativ förbättring av `scraper.py`. Se `EXPERIMENTS.md` för fullständig historik. Nuvarande aggregat per testfall (iter 6):
+F1 score against ground truth drives iterative improvement of `scraper.py`. See `EXPERIMENTS.md` for full history. Current aggregates per test case (iter 6):
 
-| Testfall | F1 |
-|----------|----|
+| Test case | F1 |
+|-----------|----|
 | Kommendoren | 94.6% |
 | Lilla ego | 94.3% |
 | Tradition | 98.5% |
 | Tranan | 94.1% |
-| Crispy kvarnholmen | ~82% (LLM-varians i PDF-extraktion) |
+| Crispy kvarnholmen | ~82% (LLM variance in PDF extraction) |
