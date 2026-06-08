@@ -1,0 +1,33 @@
+{
+  "prospect_id": "00000000-0000-0000-0000-000000000000",
+  "slug": "test-restaurang-hantverket-mpg25u7p",
+  "job_id": "00000000-0000-0000-0000-000000000000",
+  "restaurant_name": "Restaurang Hantverket",
+  "address": "Sturegatan 15a, 114 36 Stockholm, Sverige",
+  "email": "test@example.com",
+  "competitors": "Nomad Swedish food & bar (Upplandsgatan 2, 111 23 Stockholm, Sverige)\nRestaurang Artilleriet (Artillerigatan 13, 114 51 Stockholm, Sverige)\nBar Nordic (Vasagatan 52, 111 20 Stockholm, Sverige)",
+  "callback_url": "https://example.com/callback",
+  "menu_type": "a_la_carte",
+  "google_place_id": "ChIJqz85jUOdX0YRIgo1i08U5wI",
+  "website_url": "http://restauranghantverket.se/",
+  "competitor_places": [
+    {
+      "name": "Nomad Swedish food & bar",
+      "place_id": "ChIJ45ljlmadX0YRqSKnYxV8Q6U",
+      "address": "Upplandsgatan 2, 111 23 Stockholm, Sverige",
+      "website_url": "https://www.nomadbar.se/"
+    },
+    {
+      "name": "Restaurang Artilleriet",
+      "place_id": "ChIJ1VpbkVqdX0YR9NpZUQHHegA",
+      "address": "Artillerigatan 13, 114 51 Stockholm, Sverige",
+      "website_url": "https://restaurangartilleriet.se/?utm_source=google"
+    },
+    {
+      "name": "Bar Nordic",
+      "place_id": "ChIJzaQRRQCdX0YR0EvWtUcJ2q0",
+      "address": "Vasagatan 52, 111 20 Stockholm, Sverige",
+      "website_url": "http://barnordic.com/"
+    }
+  ]
+}

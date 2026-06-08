@@ -1,0 +1,21 @@
+{
+  "prospect_id": "00000000-0000-0000-0000-000000000000",
+  "slug": "test-tranan-mpbm32dv",
+  "job_id": "00000000-0000-0000-0000-000000000000",
+  "restaurant_name": "Tranan",
+  "address": "Karlbergsvägen 14, 113 27 Stockholm, Sverige",
+  "email": "test@example.com",
+  "competitors": "Tennstopet Restaurang - Bar & Pub (Dalagatan 50, 113 24 Stockholm, Sverige)",
+  "callback_url": "https://example.com/callback",
+  "menu_type": "a_la_carte",
+  "google_place_id": "ChIJe-HG22-dX0YRulYI9y_psKA",
+  "website_url": "http://www.tranan.se/",
+  "competitor_places": [
+    {
+      "name": "Tennstopet Restaurang - Bar & Pub",
+      "place_id": "ChIJj5MpCnCdX0YRQUxSg1X3F44",
+      "address": "Dalagatan 50, 113 24 Stockholm, Sverige",
+      "website_url": "https://www.tennstopet.se/?utm_source=google"
+    }
+  ]
+}

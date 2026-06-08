@@ -1,0 +1,21 @@
+{
+  "prospect_id": "00000000-0000-0000-0000-000000000000",
+  "slug": "test-crispy-pizza-bistro-kvarnholmen-mpckawuc",
+  "job_id": "00000000-0000-0000-0000-000000000000",
+  "restaurant_name": "Crispy Pizza Bistro - Kvarnholmen",
+  "address": "Kvarnholmsvägen 94, 131 31 Nacka, Sverige",
+  "email": "test@example.com",
+  "competitors": "Don Felice (Kvarnholmsvägen 84, Nacka)",
+  "callback_url": "https://example.com/callback",
+  "menu_type": "a_la_carte",
+  "google_place_id": "ChIJB2uo3kqDX0YRq9SONROVjpI",
+  "website_url": "http://crispypizzabistro.se/",
+  "competitor_places": [
+    {
+      "name": "Don Felice",
+      "place_id": "ChIJobhfr1uDX0YRWCH-RN6Fx9c",
+      "address": "Kvarnholmsvägen 84, Nacka",
+      "website_url": "http://www.donfelice.se/"
+    }
+  ]
+}

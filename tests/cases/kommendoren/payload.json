@@ -1,0 +1,27 @@
+{
+    "prospect_id": "00000000-0000-0000-0000-000000000000",
+    "slug": "test-kommendorer-restaurang-bar-mp61tkri",
+    "job_id": "00000000-0000-0000-0000-000000000000",
+    "restaurant_name": "Kommendören - Restaurang & Bar",
+    "address": "Kommendörsgatan 7, 114 48 Stockholm, Sverige",
+    "email": "test@example.cokomm",
+    "competitors": "Restaurant Aubergine (Linnégatan 38, 114 47 Stockholm, Sverige)\nTed (Linnégatan 11, 114 47 Stockholm, Sverige)",
+    "callback_url": "https://example.com/callback",
+    "menu_type": "a_la_carte",
+    "google_place_id": "ChIJRdammkSdX0YRAwZd3ZN5x9s",
+    "website_url": "https://www.kommendoren.se/?utm_source=google",
+    "competitor_places": [
+        {
+            "name": "Restaurant Aubergine",
+            "place_id": "ChIJ4_qZTkWdX0YR5xUQzEvLwu8",
+            "address": "Linnégatan 38, 114 47 Stockholm, Sverige",
+            "website_url": "http://www.aubergine.se/"
+        },
+        {
+            "name": "Ted",
+            "place_id": "ChIJ5ywaTxSdX0YRH6IQNLkFekI",
+            "address": "Linnégatan 11, 114 47 Stockholm, Sverige",
+            "website_url": "https://www.restaurangted.se/"
+        }
+    ]
+}

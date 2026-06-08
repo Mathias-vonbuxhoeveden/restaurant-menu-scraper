@@ -1,0 +1,33 @@
+{
+  "prospect_id": "f924efe4-63d4-40f9-af81-aff37198661b",
+  "slug": "restaurang-tradition",
+  "job_id": "b1b85243-7d7f-4781-8d61-49c391e1bf1b",
+  "restaurant_name": "Restaurang Tradition",
+  "address": "Österlånggatan 1, 113 53 Stockholm, Sverige",
+  "email": "tradition@gmail.com",
+  "menu_type": "a_la_carte",
+  "google_place_id": "ChIJq6qqqW6dX0YR4q_GAMMfhKQ",
+  "website_url": "https://www.restaurangtradition.se/",
+  "callback_url": "https://sfxwhxvspdultgtvjphj.supabase.co/functions/v1/ingest-menu?job_id=b1b85243-7d7f-4781-8d61-49c391e1bf1b",
+  "competitors": "Tennstopet Restaurang - Bar & Pub (Dalagatan 50, 113 24 Stockholm, Sverige)\nBistro Bestick Gamla Stan (Skeppsbron 10, 111 30 Stockholm, Sverige)\nRestaurant Pelikan (Blekingegatan 40, 116 62 Stockholm, Sverige)",
+  "competitor_places": [
+    {
+      "name": "Tennstopet Restaurang - Bar & Pub",
+      "place_id": "ChIJj5MpCnCdX0YRQUxSg1X3F44",
+      "address": "Dalagatan 50, 113 24 Stockholm, Sverige",
+      "website_url": "https://www.tennstopet.se/?utm_source=google"
+    },
+    {
+      "name": "Bistro Bestick Gamla Stan",
+      "place_id": "ChIJ5d-IvbWdX0YRDU05H52-F6o",
+      "address": "Skeppsbron 10, 111 30 Stockholm, Sverige",
+      "website_url": "https://gamlastan.bistrobestick.se/"
+    },
+    {
+      "name": "Restaurant Pelikan",
+      "place_id": "ChIJrSV1Pfd3X0YRxwhoxSQ-Cug",
+      "address": "Blekingegatan 40, 116 62 Stockholm, Sverige",
+      "website_url": "http://www.pelikan.se/"
+    }
+  ]
+}

@@ -1,60 +1,72 @@
-# Restaurant Menu Scraper
+# Meny-scraper — optimeringsloop
 
-## Syfte
-Skrapar menyer för en prospektrestaurang och dess konkurrenter, och exporterar dem till en Excel-fil med en flik per restaurang.
-
-## Primärt användningsfall — pipeline.py
-Tar restaurangnamn och adress, söker upp URL:er automatiskt via SerpAPI, och skrapar alla menyer parallellt.
-
-```bash
-python pipeline.py \
-  --name "Ricordi" \
-  --address "Kungsträdgårdsgatan 18, Stockholm" \
-  --competitors "Calle P, Bistro Arsenalen, Restaurang Pava"
+## Projektstruktur
+```
+scraper.py                           ← den enda filen du får ändra
+evaluate.py                          ← rör aldrig
+run_eval.py                          ← rör aldrig
+pipeline.py                          ← rör aldrig
+tests/cases/<case>/payload.json      ← rör aldrig
+tests/cases/<case>/ground_truth.xlsx ← rör aldrig
+tests/output/<case>_scraped.xlsx     ← genereras vid körning
+EXPERIMENTS.md                       ← uppdatera efter varje iteration
+eval_report.json                     ← skrivs över vid varje körning
 ```
 
-**Output:** `<Prospektnamn>.xlsx` med en flik per restaurang, kolumnerna **Name**, **Price**, **Category**, **Description**.
+## Köra eval
 
-**Kräver:** miljövariabeln `SERPAPI_KEY` satt i terminalen.
-
-## Sekundärt användningsfall — scraper.py
-Skrapar en enskild restaurang givet en känd URL.
-
+Alla testfall:
 ```bash
-python scraper.py --url https://example-restaurant.se
-python scraper.py --url https://example-restaurant.se --output result.xlsx --debug
+python run_eval.py --all
 ```
 
-## Flöde
+Ett specifikt testfall:
+```bash
+python run_eval.py --case <namn>
+```
 
-### pipeline.py
-1. Söker upp varje restaurangs URL via SerpAPI (filtrerar bort recensionssajter)
-2. Claude Haiku väljer bäst matchande URL bland kandidaterna
-3. Skrapar alla restauranger parallellt med `ThreadPoolExecutor`
-4. Sparar resultat i en Excel-fil med en flik per restaurang
+En specifik restaurang inom ett testfall:
+```bash
+python run_eval.py --case <namn> --only "Restaurangnamn"
+```
 
-### scraper.py (används även av pipeline.py)
-1. **URL är en PDF** → Claude Sonnet extraherar direkt
-2. **Statisk HTML** → leta efter PDF-länk → Claude Sonnet, annars Claude Haiku på HTML-text
-3. **Playwright** → om statisk HTML gav < 5 rätter: JS-rendera sidan, Claude Haiku navigerar till rätt meny-sida och flik, sedan samma PDF/HTML-logik
+## Workflow per iteration
 
-## Claude-modeller
-| Uppgift | Modell |
-|---|---|
-| Menyextraktion från HTML | `claude-haiku-4-5` |
-| Menyextraktion från PDF | `claude-sonnet-4-6` |
-| Välj PDF-länk / meny-URL / flik | `claude-haiku-4-5` |
+1. Läs `EXPERIMENTS.md` — förstå vad som testats och vad som inte funkat
+2. Kör `python run_eval.py --all` och läs output noggrant
+3. Identifiera vilket testfall/restaurang som drar ner F1 mest
+4. Läs nav-loggen för den restaurangen — vad gick snett?
+5. Bilda EN hypotes om rotorsaken
+6. Gör EN avgränsad ändring i `scraper.py`
+7. Kör eval igen (kan köra `--case <namn>` för snabbhet, kör `--all` innan commit)
+8. Jämför aggregerat F1 mot föregående iteration
+9. Om förbättring: `git commit -m "iter N: <vad> → F1 X.X%"`
+10. Om försämring: `git checkout scraper.py` och prova något annat
+11. Uppdatera `EXPERIMENTS.md`
 
-## Filer
-| Fil | Syfte |
-|---|---|
-| `pipeline.py` | Primärt skript — namn + adress + konkurrenter → Excel |
-| `scraper.py` | Lågnivå-skrapning för en URL, återanvänds av pipeline |
-| `requirements.txt` | Python-beroenden |
+## Vad du ska titta efter i eval-output
 
-## Beroenden
-- `anthropic` – Claude API för extraktion och navigeringsbeslut
-- `playwright` – headless browser för JS-renderade sidor
-- `openpyxl` – skriva Excel-filer
-- `requests` – HTTP-requests + SerpAPI-anrop
-- `beautifulsoup4` – parsa HTML
+**Navigeringsproblem (⚠ NAVIGERINGSVARNING):**
+- Inga rätter scrapad → scrapen nådde aldrig menysidan
+- Låg recall trots Playwright → fler klick krävs
+- Dessa är högt prioriterade — ingen mängd prompt-tuning hjälper om sidan inte nås
+
+**Extraktionsproblem (når sidan men missar rätter):**
+- Saknas (✗) → recall-problem, rätter finns på sidan men extraheras inte
+- Hallucinerade (?) → precision-problem, rätter hittas på som inte finns
+- Fel pris/kategori (~) → extraktionslogiken tolkar fel
+
+**Per restaurang F1** — vilken drar ner mest? Börja där.
+
+## Prioriteringsordning
+1. Navigeringsproblem först (0 rätter scrapad är alltid fel)
+2. Låg recall (saknade rätter) — vanligen viktigare än precision
+3. Hallucinerade rätter
+4. Fel pris/kategori
+
+## Regler
+- Ändra ALDRIG `evaluate.py`, `run_eval.py`, `pipeline.py` eller filer i `tests/`
+- Gör EN ändring åt gången
+- Committa BARA om aggregerat F1 förbättras (kör `--all` för att verifiera)
+- Stoppa och sammanfatta om du inte förbättrat på 5 iterationer i rad
+- Prova aldrig något som redan finns under "Testade hypoteser som INTE fungerade" i EXPERIMENTS.md

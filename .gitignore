@@ -10,6 +10,10 @@ venv/
 
 # Excel output files
 *.xlsx
+!tests/cases/**/*.xlsx
+
+# Test output
+tests/output/
 
 # Environment
 .env

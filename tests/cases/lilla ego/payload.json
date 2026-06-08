@@ -1,0 +1,33 @@
+{
+  "prospect_id": "00000000-0000-0000-0000-000000000000",
+  "slug": "test-lilla-ego-mpcez0jn",
+  "job_id": "00000000-0000-0000-0000-000000000000",
+  "restaurant_name": "Lilla Ego",
+  "address": "Västmannagatan 69, 113 26 Stockholm, Sverige",
+  "email": "test@example.com",
+  "competitors": "Haggans (Hagagatan 18, 113 48 Stockholm, Sverige)\nRestaurang ART (Norra Stationsgatan 65, 113 43 Stockholm, Sverige)\nVineriet (Roslagsgatan 15, 113 55 Stockholm, Sverige)",
+  "callback_url": "https://example.com/callback",
+  "menu_type": "a_la_carte",
+  "google_place_id": "ChIJ3x_sRnCdX0YRp4dr2VnNLpU",
+  "website_url": "http://www.lillaego.com/",
+  "competitor_places": [
+    {
+      "name": "Haggans",
+      "place_id": "ChIJGcUxHwCdX0YRuZtZ5-gu3B4",
+      "address": "Hagagatan 18, 113 48 Stockholm, Sverige",
+      "website_url": "https://www.haggans.se/"
+    },
+    {
+      "name": "Restaurang ART",
+      "place_id": "ChIJQ8EY5midX0YRaoqzzR8v1Sc",
+      "address": "Norra Stationsgatan 65, 113 43 Stockholm, Sverige",
+      "website_url": "https://restaurangart.se/?utm_source=google"
+    },
+    {
+      "name": "Vineriet",
+      "place_id": "ChIJOfZvjrSdX0YRm9uvNknHGwE",
+      "address": "Roslagsgatan 15, 113 55 Stockholm, Sverige",
+      "website_url": "https://vinerietsthlm.se/"
+    }
+  ]
+}
