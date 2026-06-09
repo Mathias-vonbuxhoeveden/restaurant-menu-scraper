@@ -1,10 +1,49 @@
 # Restaurant Menu Scraper
 
-Scrapes dinner menus from restaurant websites and exports them to Excel. Used as input for restaurant price monitoring.
+This is the scraping backend for a SaaS tool that helps restaurant owners monitor competitor pricing. Try the live app: **[menu-comparison-compass.lovable.app](https://menu-comparison-compass.lovable.app/)**
 
 ---
 
-## What it does
+## What the product does
+
+Restaurant owners sign up and enter their restaurant plus a list of competitors. The tool automatically scrapes all their menus, matches comparable dishes, and shows a dashboard with where the owner is priced high or low relative to the competition. A daily cron job re-runs the scrapers and sends notifications when prices or menus change.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────┐
+│  Lovable (frontend + matching) │
+│  menu-comparison-compass.lovable.app │
+│                              │
+│  • Signup / restaurant setup │
+│  • Dish matching between     │
+│    restaurants               │
+│  • Pricing dashboard         │
+└────────────┬─────────────────┘
+             │ POST /scrape (restaurant + competitors)
+             ▼
+┌──────────────────────────────┐
+│  Scraping API — this repo    │
+│  Hosted on Render            │
+│                              │
+│  scraper.py  ← core logic    │
+│  pipeline.py ← orchestration │
+└────────────┬─────────────────┘
+             │ writes results
+             ▼
+┌──────────────────────────────┐
+│  Supabase (database)         │
+│  Stores menus + price history│
+└──────────────────────────────┘
+```
+
+The frontend (Lovable) handles signup, dish matching, and the dashboard. The scraping API (this repo, running on Render) handles all data collection. Results are stored in Supabase and read back by the frontend.
+
+---
+
+## How the scraper works
 
 Given a restaurant URL, the scraper retrieves the menu regardless of how the page is built:
 
@@ -14,7 +53,7 @@ Given a restaurant URL, the scraper retrieves the menu regardless of how the pag
 
 Claude decides which PDFs, tabs and nav elements lead to the dinner menu, and extracts the dishes into structured JSON.
 
-**Output:** Excel file with columns `Name`, `Price`, `Category`, `Description`.
+**Output:** `Name`, `Price`, `Category`, `Description` per dish.
 
 ---
 
@@ -22,7 +61,7 @@ Claude decides which PDFs, tabs and nav elements lead to the dinner menu, and ex
 
 | File | Purpose |
 |------|---------|
-| `scraper.py` | Low-level scraping for a single URL — the only file modified in the optimisation loop |
+| `scraper.py` | Low-level scraping for a single URL |
 | `pipeline.py` | Looks up URLs via SerpAPI, runs parallel scraping, writes multi-sheet Excel |
 | `evaluate.py` | Computes precision/recall/F1 against ground-truth Excel files |
 | `run_eval.py` | CLI wrapper for evaluate.py — runs one or all test cases |
@@ -104,9 +143,9 @@ Results are written to `eval_report.json` and printed to the terminal with per-r
 
 ---
 
-## Architecture
+## Scraper internals
 
-### Scraper flow (`scraper.py`)
+### Flow (`scraper.py`)
 
 ```
 URL
@@ -132,14 +171,14 @@ URL
 
 ### Concurrency
 
-- Max 1 Playwright instance at a time (`threading.Semaphore(1)`) — keeps RAM usage low
-- Max 5 concurrent Claude API calls (`threading.Semaphore(5)`) — avoids 529 errors under parallel pipeline load
+- Max 1 Playwright instance at a time (`threading.Semaphore(1)`) — keeps RAM usage low on Render
+- Max 5 concurrent Claude API calls (`threading.Semaphore(5)`) — avoids rate-limit errors under parallel pipeline load
 
 ---
 
-## Optimisation loop
+## Accuracy
 
-F1 score against ground truth drives iterative improvement of `scraper.py`. See `EXPERIMENTS.md` for full history. Current aggregates per test case (iter 6):
+F1 score against ground truth drives iterative improvement of `scraper.py`. See `EXPERIMENTS.md` for full history. Current aggregates (iter 6):
 
 | Test case | F1 |
 |-----------|----|
