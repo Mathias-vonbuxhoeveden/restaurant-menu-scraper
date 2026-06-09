@@ -6,7 +6,7 @@ This is the scraping backend for a SaaS tool that helps restaurant owners monito
 
 ## What the product does
 
-Restaurant owners sign up and enter their restaurant plus a list of competitors. The tool automatically scrapes all their menus, matches comparable dishes, and shows a dashboard with where the owner is priced high or low relative to the competition. A daily cron job re-runs the scrapers and sends notifications when prices or menus change.
+Restaurant owners sign up and enter their restaurant plus a list of competitors. The restaurant websites are looked up via the Google Places API, which provides the relevant URLs for scraping. The tool then automatically scrapes all their menus, matches comparable dishes, and shows a dashboard with where the owner is priced high or low relative to the competition.
 
 ---
 
