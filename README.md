@@ -1,6 +1,6 @@
 # Restaurant Menu Scraper
 
-This is the scraping backend for a SaaS tool that helps restaurant owners monitor competitor pricing. Try the live app: **[menu-comparison-compass.lovable.app](https://menu-comparison-compass.lovable.app/)**
+This is the scraping backend for a SaaS tool that helps restaurant owners monitor competitor pricing. Try the live app: **[menu-comparison-compass.lovable.app](https://menu-comparison-compass.lovable.app/)** (in Swedish)
 
 ---
 
