@@ -88,12 +88,12 @@ def load_payload(path: str) -> dict:
     return json.loads(raw)
 
 
-def restaurants_from_payload(payload: dict) -> list[tuple[str, str, str]]:
-    """Returns [(name, website_url, menu_type), …] for prospect + competitors."""
+def restaurants_from_payload(payload: dict) -> list[tuple[str, str, str, str]]:
+    """Returns [(name, address, website_url, menu_type), …] for prospect + competitors."""
     menu_type = payload.get("menu_type", "dinner")
-    result = [(payload["restaurant_name"], payload.get("website_url", ""), menu_type)]
+    result = [(payload["restaurant_name"], payload.get("address", ""), payload.get("website_url", ""), menu_type)]
     for c in payload.get("competitor_places", []):
-        result.append((c["name"], c.get("website_url", ""), menu_type))
+        result.append((c["name"], c.get("address", ""), c.get("website_url", ""), menu_type))
     return result
 
 
@@ -101,7 +101,7 @@ def restaurants_from_payload(payload: dict) -> list[tuple[str, str, str]]:
 # Scrape phase — runs scrape_menu() per restaurant, captures nav log
 # ---------------------------------------------------------------------------
 
-def _scrape_one(name: str, url: str, menu_type: str) -> tuple[str, list, str]:
+def _scrape_one(name: str, address: str, url: str, menu_type: str) -> tuple[str, list, str]:
     """Returns (name, rows, nav_log)."""
     if not url:
         return name, [], "(ingen URL)"
@@ -118,7 +118,7 @@ def _scrape_one(name: str, url: str, menu_type: str) -> tuple[str, list, str]:
 
     try:
         with redirect_stdout(stdout_buf):
-            rows = scrape_menu(url, menu_type=menu_type)
+            rows = scrape_menu(url, menu_type=menu_type, restaurant_name=name, restaurant_address=address)
     except Exception as exc:
         rows = []
         print(f"EXCEPTION: {exc}", file=stdout_buf)
@@ -130,7 +130,7 @@ def _scrape_one(name: str, url: str, menu_type: str) -> tuple[str, list, str]:
 
 
 def scrape_phase(
-    restaurants: list[tuple[str, str, str]],
+    restaurants: list[tuple[str, str, str, str]],
     output_xlsx: str,
     only: str | None,
 ) -> tuple[dict[str, list], dict[str, str]]:
@@ -142,23 +142,23 @@ def scrape_phase(
     """
     if only:
         needle = only.lower()
-        restaurants = [(n, u, m) for n, u, m in restaurants if needle in n.lower()]
+        restaurants = [(n, a, u, m) for n, a, u, m in restaurants if needle in n.lower()]
         if not restaurants:
             log.error("--only '%s' matchade ingen restaurang i payloaden.", only)
             sys.exit(1)
 
-    log.info("Skrapar %d restauranger: %s", len(restaurants), [n for n, _, _ in restaurants])
+    log.info("Skrapar %d restauranger: %s", len(restaurants), [n for n, _, _, _ in restaurants])
 
     scraped_rows: dict[str, list] = {}
     nav_logs:     dict[str, str]  = {}
 
-    for name, url, menu_type in restaurants:
-        name, rows, nav_log = _scrape_one(name, url, menu_type)
+    for name, address, url, menu_type in restaurants:
+        name, rows, nav_log = _scrape_one(name, address, url, menu_type)
         scraped_rows[name] = rows
         nav_logs[name]     = nav_log
 
     # Save scraped data to Excel (preserving payload order)
-    sheets = [(name, scraped_rows[name]) for name, _, _ in restaurants if name in scraped_rows]
+    sheets = [(name, scraped_rows[name]) for name, _, _, _ in restaurants if name in scraped_rows]
     write_workbook(sheets, output_xlsx)
     log.info("Scrapad data sparad: %s", output_xlsx)
 
@@ -397,10 +397,9 @@ def _run_case(
         sys.exit(1)
 
     payload = load_payload(str(payload_path))
-    slug    = payload.get("slug") or payload.get("restaurant_name", "output").replace(" ", "_").lower()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    scraped_xlsx = scraped_override or output_override or str(OUTPUT_DIR / f"{slug}_scraped.xlsx")
+    scraped_xlsx = scraped_override or output_override or str(OUTPUT_DIR / f"{case_name}_scraped.xlsx")
 
     if scraped_override:
         log.info("Hoppar över scraping — använder: %s", scraped_override)

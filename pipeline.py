@@ -140,7 +140,7 @@ Svara med ENBART siffran."""}],
 # Scrape one restaurant → list of (Rätt, Pris, Kategori, Beskrivning)
 # ---------------------------------------------------------------------------
 
-def scrape_menu(url: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
+def scrape_menu(url: str, language: str = "sv", menu_type: str = "dinner", restaurant_name: str | None = None, restaurant_address: str | None = None) -> list[tuple[str, str, str, str]]:
     """
     Kör samma fallback-kedja som scraper.py main() men returnerar
     raderna i stället för att spara till fil.
@@ -183,7 +183,7 @@ def scrape_menu(url: str, language: str = "sv", menu_type: str = "dinner") -> li
 
     # 4. Playwright (JS-renderad sida)
     try:
-        rows = scrape_dynamic(url, language=language, menu_type=menu_type)
+        rows = scrape_dynamic(url, language=language, menu_type=menu_type, restaurant_name=restaurant_name, restaurant_address=restaurant_address)
         if rows:
             return rows
         log.warning("Playwright hittade inga rätter för %s", url)

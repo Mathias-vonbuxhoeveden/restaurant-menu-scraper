@@ -70,12 +70,12 @@ def scrape(req: ScrapeRequest, background_tasks: BackgroundTasks):
 # Bakgrundshantering
 # ---------------------------------------------------------------------------
 
-def _scrape_one(name: str, place_id: str, website_url: str, menu_type: str) -> dict:
+def _scrape_one(name: str, address: str, place_id: str, website_url: str, menu_type: str) -> dict:
     log.info("=== Startar: %s ===", name)
     items = []
     if website_url:
         try:
-            rows = scrape_menu(website_url, menu_type=menu_type)
+            rows = scrape_menu(website_url, menu_type=menu_type, restaurant_name=name, restaurant_address=address)
             items = [
                 {
                     "name": row[0],
@@ -103,15 +103,15 @@ def _parse_price(price_str: str) -> int | str:
 
 def _process(req: ScrapeRequest) -> None:
     all_restaurants = [
-        (req.restaurant_name, req.google_place_id, req.website_url),
-        *((c.name, c.place_id, c.website_url) for c in req.competitor_places),
+        (req.restaurant_name, req.address, req.google_place_id, req.website_url),
+        *((c.name, c.address, c.place_id, c.website_url) for c in req.competitor_places),
     ]
 
     results: dict[str, dict] = {}
     with ThreadPoolExecutor(max_workers=len(all_restaurants)) as executor:
         futures = {
-            executor.submit(_scrape_one, name, place_id, website_url, req.menu_type): name
-            for name, place_id, website_url in all_restaurants
+            executor.submit(_scrape_one, name, address, place_id, website_url, req.menu_type): name
+            for name, address, place_id, website_url in all_restaurants
         }
         for future in as_completed(futures):
             result = future.result()

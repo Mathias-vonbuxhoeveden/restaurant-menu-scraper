@@ -11,16 +11,13 @@ Flow:
   4. Only if nothing found: use Playwright (JS-rendered HTML, no PDFs)
 """
 
-import argparse
+import io
 import json
 import os
 import re
-import sys
-import io
 import threading
 import anthropic
 import requests
-import openpyxl
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
@@ -90,18 +87,10 @@ def is_pdf_url(url: str) -> bool:
     return urlparse(url).path.lower().endswith(".pdf")
 
 
-def rows_to_excel(rows: list[tuple[str, str, str, str]], output_path: str = "menu.xlsx") -> None:
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Meny"
-    ws.append(["Name", "Price", "Category", "Description"])
-    for dish, price, category, description in rows:
-        ws.append([dish, price, category, description])
-    for col in ws.columns:
-        max_len = max(len(str(cell.value or "")) for cell in col)
-        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 80)
-    wb.save(output_path)
-    print(f"Sparade {len(rows)} rätter till {output_path}")
+def is_docx_url(url: str) -> bool:
+    return urlparse(url).path.lower().endswith(".docx")
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -126,10 +115,8 @@ def find_pdf_url(html: str, base_url: str, menu_type: str = "dinner") -> str | N
 
     if not pdfs:
         return None
-    if len(pdfs) == 1:
-        return pdfs[0]["url"]
 
-    # Multiple PDFs — let Claude pick the right one
+    # Always ask Claude to pick — even with one PDF — so irrelevant PDFs (wine lists etc.) are rejected
     client = anthropic.Anthropic()
     pdf_list = "\n".join(
         f'{i+1}. text="{p["text"]}"  url={p["url"]}'
@@ -139,10 +126,11 @@ def find_pdf_url(html: str, base_url: str, menu_type: str = "dinner") -> str | N
     response = _claude_create(client,
         model="claude-haiku-4-5-20251001",
         max_tokens=8,
-        messages=[{"role": "user", "content": f"""En restaurangsida har flera PDF-menyer. Välj den som innehåller: {nav_instruction}
+        messages=[{"role": "user", "content": f"""En restaurangsida har PDF-filer. Välj den som innehåller: {nav_instruction}
 
 {pdf_list}
 
+Svara 0 om ingen PDF verkar relevant (t.ex. vinlista, eventmeny, weekendmeny).
 Svara med ENBART siffran."""}],
     )
     choice = response.content[0].text.strip()
@@ -153,7 +141,8 @@ Svara med ENBART siffran."""}],
             return pdfs[idx]["url"]
     except ValueError:
         pass
-    return pdfs[0]["url"]
+    print(f"  Claude valde ingen PDF (svar: {choice!r})")
+    return None
 
 
 # Each menu type has two prompt snippets:
@@ -197,12 +186,10 @@ def _build_extraction_prompt(menu_type: str) -> str:
     return f"""{extract_instruction}
 
 Returnera ett JSON-array där varje objekt har exakt dessa fält:
-- "name": ENBART rättens namn — vanligtvis första raden eller första komma-separerade delen. Aldrig ingredienser eller beskrivning.
-  Exempel: "POMODORO, SPAGHETTI, TOMATSÅS, STRACCIATELLA, BASILIKA  195kr"
-  → name="POMODORO", price="195", description="SPAGHETTI, TOMATSÅS, STRACCIATELLA, BASILIKA"
+- "name": Rättens kortfattade, igenkännbara namn — det du skulle säga när du beställer. Inkludera inte ingredienser, tillbehör eller tillagningsteknik som kan separeras till description-fältet. Aldrig mer än nödvändigt.
 - "price": priset som ett rent heltal utan enhet (t.ex. "139"), eller tom sträng om inget pris. Varje rätt har exakt ett pris — blanda aldrig ihop priser mellan olika rätter. Om texten är kolumnformaterad, se till att priset på samma rad som rätten används.
 - "category": sektionsrubriken som föregår denna rätt i menyn (t.ex. "FÖRRÄTT", "HUVUDRÄTT", "ANTIPASTI"). En rubrik gäller för alla rätter som följer tills nästa rubrik dyker upp. Tom sträng om ingen rubrik finns.
-- "description": ingredienser, tillbehör och övrig beskrivningstext från menyn. Kontext: description används av en annan AI för prisjämförelse mellan restauranger — ju mer konkret innehåll, desto bättre. Regler: aldrig rättens namn igen; aldrig kategorinamnet igen; lämna tom sträng ("") om ingen beskrivning finns på menyn; hitta ALDRIG på ingredienser — extrahera bara det som faktiskt står skrivet; behåll originalspråket (svenska/italienska/engelska som det står).
+- "description": alla ingredienser, tillbehör, såser och övrig beskrivning som inte är en del av rättens kärnnamn. Kontext: description används av en annan AI för att matcha och jämföra liknande rätter mellan restauranger — ju mer konkret innehåll, desto bättre. Regler: aldrig rättens namn igen; aldrig kategorinamnet igen; lämna tom sträng ("") om ingen beskrivning finns på menyn; hitta ALDRIG på ingredienser — extrahera bara det som faktiskt står skrivet; behåll originalspråket; om du är osäker om något hör till name eller description — välj description.
 
 Inkludera INTE: tillbehör utan eget pris, pizza-baser eller pizza-typer (t.ex. "rossa", "bianca"), sidorätter listade som tillägg, eller avdelningsrubriker.
 
@@ -296,6 +283,32 @@ def scrape_pdf_from_url(pdf_url: str, language: str = "sv", menu_type: str = "di
     rows = parse_pdf(resp.content, language=language, menu_type=menu_type)
     print(f"  Hittade {len(rows)} rätter i PDF")
     return rows
+
+
+def parse_docx(docx_bytes: bytes, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
+    """Extract menu from a Word (.docx) file by pulling out plain text and sending to Claude."""
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    print(f"  DOCX: {len(docx_bytes):,} bytes — extraherar text …")
+    with zipfile.ZipFile(io.BytesIO(docx_bytes)) as z:
+        xml = z.read("word/document.xml")
+    root = ET.fromstring(xml)
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    texts = [t.text for t in root.findall(".//w:t", ns) if t.text and t.text.strip()]
+    text = "\n".join(texts)
+    print(f"  DOCX: {len(text)} tecken extraherade — skickar till Claude …")
+    rows = extract_with_claude(text, language=language, menu_type=menu_type)
+    print(f"  Hittade {len(rows)} rätter i DOCX")
+    return rows
+
+
+def scrape_docx_from_url(url: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
+    print(f"Laddar ned DOCX: {url}")
+    resp = requests.get(url, timeout=30, headers=HEADERS)
+    resp.raise_for_status()
+    print(f"  {len(resp.content):,} bytes nedladdade")
+    return parse_docx(resp.content, language=language, menu_type=menu_type)
 
 
 # ---------------------------------------------------------------------------
@@ -442,6 +455,13 @@ def collect_all_navigable_elements(page, base_url: str, max_items: int = 25) -> 
             text = (a.inner_text() or "").strip()
             href = a.get_attribute("href") or ""
             full = urljoin(base_url, href)
+            # Fallback for image/icon links with no visible text: use title attr then URL path segment
+            if not text:
+                text = (a.get_attribute("title") or "").strip()
+            if not text and href and not href.startswith("#"):
+                path = urlparse(full).path.strip("/").split("/")[-1]
+                if path:
+                    text = path.replace("-", " ")
             if text and href and full not in seen and 2 <= len(text) <= 60:
                 seen.add(full)
                 el_type = "pdf" if is_pdf_url(full) else "link"
@@ -471,6 +491,8 @@ def pick_next_action(
     current_url: str,
     page_title: str,
     menu_type: str = "dinner",
+    restaurant_name: str | None = None,
+    restaurant_address: str | None = None,
 ) -> dict | None:
     """Ask Claude to pick the element most likely to lead to the menu."""
     if not elements:
@@ -482,13 +504,18 @@ def pick_next_action(
         f'{i+1}. [{el["type"]}] "{el["text"]}"' + (f"  → {el['href']}" if el["href"] else "")
         for i, el in enumerate(elements)
     )
+    restaurant_context = ""
+    if restaurant_name or restaurant_address:
+        parts = [p for p in [restaurant_name, restaurant_address] if p]
+        restaurant_context = f"\nRestaurang vi letar efter: {', '.join(parts)}. Om sidan visar flera restaurangalternativ, välj det som matchar detta namn/adress."
+
     response = _claude_create(client,
         model="claude-haiku-4-5-20251001",
         max_tokens=8,
         messages=[{"role": "user", "content": f"""Du hjälper till att navigera till rätt menysida på en restaurang.
 
 Sida: {page_title} ({current_url})
-Letar efter: {nav_instruction}
+Letar efter: {nav_instruction}{restaurant_context}
 
 Klickbara element:
 {numbered}
@@ -511,15 +538,15 @@ Svara med ENBART siffran."""}],
     return None
 
 
-def scrape_dynamic(url: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
+def scrape_dynamic(url: str, language: str = "sv", menu_type: str = "dinner", restaurant_name: str | None = None, restaurant_address: str | None = None) -> list[tuple[str, str, str, str]]:
     print("Playwright: renderar JS-sida …")
     from playwright.sync_api import sync_playwright
 
     with _playwright_semaphore:
-        return _scrape_dynamic_impl(url, language=language, menu_type=menu_type)
+        return _scrape_dynamic_impl(url, language=language, menu_type=menu_type, restaurant_name=restaurant_name, restaurant_address=restaurant_address)
 
 
-def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
+def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinner", restaurant_name: str | None = None, restaurant_address: str | None = None) -> list[tuple[str, str, str, str]]:
     from playwright.sync_api import sync_playwright
 
     MAX_NAV_STEPS = 4
@@ -583,7 +610,7 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
 
             elements = collect_all_navigable_elements(page, current_url)
             print(f"  Hittade {len(elements)} klickbara element")
-            action = pick_next_action(elements, current_url, page_title, menu_type=menu_type)
+            action = pick_next_action(elements, current_url, page_title, menu_type=menu_type, restaurant_name=restaurant_name, restaurant_address=restaurant_address)
 
             if not action:
                 break
@@ -613,14 +640,17 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
                     page.wait_for_load_state("networkidle", timeout=10000)
             except Exception as e:
                 exc_str = str(e)
-                # Playwright triggers a download when navigating to a PDF — extract URL and fetch directly
+                # Playwright triggers a download when navigating to a PDF/DOCX — extract URL and fetch directly
                 if "Download is starting" in exc_str:
-                    pdf_match = re.search(r'navigating to "([^"]+)"', exc_str)
-                    pdf_candidate = pdf_match.group(1) if pdf_match else page.url
-                    if pdf_candidate:
-                        print(f"  PDF-download detekterad — hämtar direkt: {pdf_candidate}")
+                    doc_match = re.search(r'navigating to "([^"]+)"', exc_str)
+                    doc_candidate = doc_match.group(1) if doc_match else page.url
+                    if doc_candidate:
                         browser.close()
-                        return scrape_pdf_from_url(pdf_candidate, language=language, menu_type=menu_type)
+                        if is_docx_url(doc_candidate):
+                            print(f"  DOCX-download detekterad — hämtar direkt: {doc_candidate}")
+                            return scrape_docx_from_url(doc_candidate, language=language, menu_type=menu_type)
+                        print(f"  PDF-download detekterad — hämtar direkt: {doc_candidate}")
+                        return scrape_pdf_from_url(doc_candidate, language=language, menu_type=menu_type)
                 print(f"  Navigering misslyckades: {e}")
                 break
 
@@ -641,80 +671,3 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
     return rows
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Skrapar restaurangmenyer till Excel")
-    parser.add_argument("--url", required=True, help="URL till restaurangens hemsida")
-    parser.add_argument("--output", default="menu.xlsx", help="Utdatafil (default: menu.xlsx)")
-    parser.add_argument("--debug", action="store_true", help="Visa webbläsare + spara PDF-bilder")
-    parser.add_argument("--language", default="sv", help="Föredraget språk för beskrivningar (default: sv)")
-    parser.add_argument("--menu-type", default="dinner", help="Typ av meny att skrapa (default: dinner)")
-    args = parser.parse_args()
-
-    global DEBUG
-    DEBUG = args.debug
-    url = args.url
-    language = args.language
-    menu_type = args.menu_type
-
-    # Step 0: URL is itself a PDF → parse directly
-    if is_pdf_url(url):
-        try:
-            rows = scrape_pdf_from_url(url, language=language, menu_type=menu_type)
-            if rows:
-                rows_to_excel(rows, args.output)
-                return
-        except Exception as e:
-            print(f"  PDF-skrapning misslyckades: {e}")
-        sys.exit(1)
-
-    # Step 1: Fetch static HTML (needed for both menu parsing and PDF-link detection)
-    try:
-        html, rows = scrape_static_html(url, language=language, menu_type=menu_type)
-    except Exception as e:
-        print(f"  Kunde inte hämta sidan: {e}")
-        html, rows = "", []
-
-    # Step 2: PDF link in static HTML → download + Claude extraction
-    if html:
-        pdf_url = find_pdf_url(html, url, menu_type=menu_type)
-        if pdf_url:
-            try:
-                rows = scrape_pdf_from_url(pdf_url, language=language, menu_type=menu_type)
-                if rows:
-                    rows_to_excel(rows, args.output)
-                    return
-                print("  Hittade inga rätter i PDF.")
-            except Exception as e:
-                print(f"  PDF-skrapning misslyckades: {e}")
-
-    # Step 3: Static HTML had menu rows (no PDF needed)
-    # Require at least one priced row — nav-link halluciations never have prices
-    rows_with_price = [r for r in rows if str(r[1]).strip()]
-    if rows_with_price:
-        rows_to_excel(rows, args.output)
-        return
-    if rows:
-        print("  Statisk HTML: rätter utan pris — fortsätter till Playwright.")
-    else:
-        print("  Hittade inga rätter i statisk HTML.")
-
-    # Step 4: Playwright for JS-rendered pages
-    try:
-        rows = scrape_dynamic(url, language=language, menu_type=menu_type)
-        if rows:
-            rows_to_excel(rows, args.output)
-            return
-        print("  Hittade inga rätter via Playwright.")
-    except Exception as e:
-        print(f"  Playwright misslyckades: {e}")
-
-    print("Kunde inte extrahera någon meny. Prova att inspektera sidan manuellt.", file=sys.stderr)
-    sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

@@ -2,10 +2,11 @@
 
 ## Projektstruktur
 ```
-scraper.py                           ← den enda filen du får ändra
-evaluate.py                          ← rör aldrig
-run_eval.py                          ← rör aldrig
-pipeline.py                          ← rör aldrig
+scraper.py                           ← primär fil att ändra (scraping-logik)
+api.py                               ← får ändras (produktions-API)
+pipeline.py                          ← får ändras (orkestrering)
+run_eval.py                          ← får ändras om eval-kedjan måste spegla api.py
+evaluate.py                          ← rör aldrig (eval-logik)
 tests/cases/<case>/payload.json      ← rör aldrig
 tests/cases/<case>/ground_truth.xlsx ← rör aldrig
 tests/output/<case>_scraped.xlsx     ← genereras vid körning
