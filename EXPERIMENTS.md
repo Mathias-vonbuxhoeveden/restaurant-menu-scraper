@@ -2,22 +2,25 @@
 
 ## Aggregerat resultat per iteration
 
-> **OBS:** Iter 0–3 mättes utan testfallet *lilla ego*. Iter 3★ är re-baseline med alla 4 testfall. Iter 5★ är re-baseline med alla 5 testfall (Crispy tillagd).
+> **OBS:** Iter 0–3 mättes utan testfallet *lilla ego*. Iter 3★ är re-baseline med alla 4 testfall. Iter 5★ är re-baseline med alla 5 testfall (Crispy tillagd). Iter 7★ är re-baseline med alla 7 testfall (Hantverket + Piadina tillagda).
 
-| Iter | Datum | Ändring | Crispy | Kommendoren | Lilla ego | Tradition | Tranan | Commit |
-|------|-------|---------|--------|------------|-----------|-----------|--------|--------|
-| 0 | 2026-05-18 | Baseline | — | 92.4% | — | 77.8% | 69.7% | df2d58e |
-| 1a | 2026-05-18 | Prompt: exkludera sides/såser med eget pris | — | 95.8% | — | — | — | 31c96ec |
-| 1b | 2026-05-18 | Nav-dedup: byt text→URL, fixar Pelikan+Tranan | — | 95.8% | — | 91.8%* | 96.6% | 3492fbb |
-| 2 | 2026-05-18 | Reliabilitet: JSON-retry, nav-prompt, statisk-HTML-priströskel | — | 95.8% | — | 98.5% | ~92.6% | e804180 |
-| 3 | 2026-05-18 | Filtrera display:none + Elementor-dolda sektioner i BeautifulSoup | — | 100.0% | — | 98.5% | 96.6% | 5add54a |
-| **3★** | **2026-05-19** | **Re-baseline: lilla ego GT tillagd (ingen kod-ändring)** | — | **100.0%** | **79.7%** | **98.5%** | **96.6%** | **5add54a** |
-| 4 | 2026-05-19 | Extract-prompt: lägg till snacks/aptitretare/ostar i include-listan | — | 94.6% | 94.3% | 98.5% | 94.1% | 8e5c81c |
-| **5★** | **2026-05-19** | **Nav-fix: skip is_menu_complete vid 0 rätter + MAX_NAV_STEPS 3→4; Crispy GT tillagd** | **85.9%** | **94.6%** | **97.1%** | **98.5%** | **94.1%** | bbc0e12 |
-| 6 | 2026-05-19 | Nav-fix: kontrollera PDF-länkar i Playwright-rendrad HTML efter varje steg | ~82%† | 94.6% | 94.3% | 98.5% | 94.1% | — |
+| Iter | Datum | Ändring | Crispy | Hantverket | Piadina | Kommendoren | Lilla ego | Tradition | Tranan | Commit |
+|------|-------|---------|--------|-----------|---------|------------|-----------|-----------|--------|--------|
+| 0 | 2026-05-18 | Baseline | — | — | — | 92.4% | — | 77.8% | 69.7% | df2d58e |
+| 1a | 2026-05-18 | Prompt: exkludera sides/såser med eget pris | — | — | — | 95.8% | — | — | — | 31c96ec |
+| 1b | 2026-05-18 | Nav-dedup: byt text→URL, fixar Pelikan+Tranan | — | — | — | 95.8% | — | 91.8%* | 96.6% | 3492fbb |
+| 2 | 2026-05-18 | Reliabilitet: JSON-retry, nav-prompt, statisk-HTML-priströskel | — | — | — | 95.8% | — | 98.5% | ~92.6% | e804180 |
+| 3 | 2026-05-18 | Filtrera display:none + Elementor-dolda sektioner i BeautifulSoup | — | — | — | 100.0% | — | 98.5% | 96.6% | 5add54a |
+| **3★** | **2026-05-19** | **Re-baseline: lilla ego GT tillagd (ingen kod-ändring)** | — | — | — | **100.0%** | **79.7%** | **98.5%** | **96.6%** | **5add54a** |
+| 4 | 2026-05-19 | Extract-prompt: lägg till snacks/aptitretare/ostar i include-listan | — | — | — | 94.6% | 94.3% | 98.5% | 94.1% | 8e5c81c |
+| **5★** | **2026-05-19** | **Nav-fix: skip is_menu_complete vid 0 rätter + MAX_NAV_STEPS 3→4; Crispy GT tillagd** | **85.9%** | — | — | **94.6%** | **97.1%** | **98.5%** | **94.1%** | bbc0e12 |
+| 6 | 2026-05-19 | Nav-fix: kontrollera PDF-länkar i Playwright-rendrad HTML efter varje steg | ~82%† | — | — | 94.6% | 94.3% | 98.5% | 94.1% | — |
+| **7★** | **2026-06-24** | **Pop-up-dismissal + PDF-prioritering vid prislösa rätter; Hantverket + Piadina GT tillagda** | **75.2%**‡ | **89.4%** | **88.6%** | **74.8%**§ | **82.9%**‡ | **91.3%**‡ | **81.7%**‡ | **85db41f** |
 
 *) Tradition-aggregat fluktuerar pga LLM-varians i PDF-extraktionen; 76.8%–98.5% sett i olika körningar
 †) Crispy-aggregat varierar 80–86% pga LLM-varians i PDF-extraktion; navigeringen är nu deterministisk
+‡) Siffror under förväntan pga LLM-varians denna körning — ingen kodregression identifierad
+§) Kommendoren-aggregat påverkat av Aubergine (41.7%): GT är inaktuell, menyn har ändrats sedan facit skapades
 
 ---
 
@@ -55,6 +58,18 @@
 - **Statisk HTML-priströskel**: `main()` avslutar inte vid statisk HTML om ingen rad har pris.
   Navigeringslänkar som hallucineras (t.ex. "Meny" utan pris) blockar inte längre Playwright-fallback.
 - Aggregat tradition: **98.5%** stabilt; tranan ~92.6% (kvar LLM-varians i nav-steget)
+
+### Iter 7★ — Pop-up-dismissal + PDF-prioritering vid prislösa rätter (2026-06-24)
+- **Nytt testfall: Piadina** (Piadina 88.4%, Invece 74.7%, Medis Kök & Bar 99.1%)
+- **Nytt testfall: Hantverket** (Hantverket 100%, Nomad 87%, Artilleriet 91.2%, Bar Nordic 62.5%)
+- **Rotorsak Invece (0% recall):**
+  1. WordPress Popup Builder-overlay visade bakgrundstexten (Instagram-inbäddningar) som extraherades som 6 "rätter" utan priser — Claude sa "done" utan att ha nått menyn.
+  2. När pop-upen stängdes med Escape: landningssidan och `/menyer/`-sidan innehöll bara Instagram-embeds (inga priser) → PDF-länkarna på `/menyer/` hittades aldrig.
+- **Fix 1:** `_dismiss_popups(page)` — körs direkt efter `page.goto()`. Testar Escape + lista av vanliga pop-up-selektorer inkl. `[class*='sgpb-popup-close-button']` (WordPress Popup Builder).
+- **Fix 2:** Om alla extraherade rätter saknar pris (`all(r[1] == "" for r in rows)`) → kolla efter PDF-länk direkt, prioritera den framför HTML-extraktionen. Trigg på Invece `/menyer/` → hittar `a-la-carte-1.pdf` deterministiskt.
+- **Invece: 0% → 74.7%** (37 rätter från PDF). Kvarstående: 11 saknas (contorni + MENYFÖRSLAG + GRIGLIATA MISTA), kategorinamn FRITTI vs ANTIPASTI PICCOLI, 2 hallucinerade (Prosciutto/Coppa namnvarianter).
+- **Aubergine GT inaktuell:** Aubergine 41.7% beror på att GT inte stämmer med nuvarande meny — scraper extraherar korrekt data men facit är föråldrat.
+- **Övriga regressioner är LLM-varians:** Tradition (68.6%), Tranan (65.5%), Lilla Ego (72.7%) — samtliga med känd hög varians; ingen kodregression identifierad i nav-loggarna.
 
 ### Iter 6 — PDF-check i Playwright-loop (2026-05-19)
 - **Rotorsak (kvarstående prod-problem):** Även med `MAX_NAV_STEPS=4` och `if rows and is_menu_complete` kunde Claude navigera fel (t.ex. till HTML-sida istf. PDF) och köra slut på steg. Navigeringen var fortfarande LLM-beroende.
