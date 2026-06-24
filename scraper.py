@@ -538,6 +538,40 @@ Svara med ENBART siffran."""}],
     return None
 
 
+def _dismiss_popups(page) -> None:
+    """Dismiss cookie banners and modal overlays before scraping."""
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+
+    selectors = [
+        "[class*='sgpb-popup-close-button']",  # Popup Builder (WordPress)
+        "[aria-label*='close' i]",
+        "[aria-label*='stäng' i]",
+        "[aria-label*='dismiss' i]",
+        "button[class*='close' i]",
+        "button[class*='popup' i]",
+        "button[class*='modal' i]",
+        ".cookie-close",
+        ".modal-close",
+        "button:has-text('Acceptera')",
+        "button:has-text('Godkänn')",
+        "button:has-text('Stäng')",
+        "button:has-text('OK')",
+        "button:has-text('✕')",
+        "button:has-text('×')",
+    ]
+
+    for selector in selectors:
+        try:
+            el = page.locator(selector).first
+            if el.is_visible(timeout=300):
+                el.click(timeout=1000)
+                page.wait_for_timeout(300)
+                return
+        except Exception:
+            pass
+
+
 def scrape_dynamic(url: str, language: str = "sv", menu_type: str = "dinner", restaurant_name: str | None = None, restaurant_address: str | None = None) -> list[tuple[str, str, str, str]]:
     print("Playwright: renderar JS-sida …")
     from playwright.sync_api import sync_playwright
@@ -577,6 +611,7 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
 
         page.route("**/*", _block_heavy)
         page.goto(url, wait_until="networkidle", timeout=30000)
+        _dismiss_popups(page)
 
         rows: list[tuple[str, str, str, str]] = []
         html = ""
@@ -590,6 +625,16 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
 
             rows = parse_menu_from_html(html, language=language, menu_type=menu_type)
             print(f"  Steg {step + 1}/{MAX_NAV_STEPS}: {len(rows)} rätter på '{page_title}'")
+
+            # If all extracted rows lack prices they are likely noise (e.g. social-media embeds),
+            # not a real menu. Check for a PDF link before trusting them.
+            if rows and all(r[1] == "" for r in rows):
+                pdf_url = find_pdf_url(html, current_url, menu_type=menu_type)
+                if pdf_url:
+                    print(f"  Rätter utan pris — PDF-länk prioriteras: {pdf_url}")
+                    browser.close()
+                    return scrape_pdf_from_url(pdf_url, language=language, menu_type=menu_type)
+                rows = []  # treat as no real menu found
 
             if rows and _is_menu_complete(rows, page_title, _html_text_snippet(html), menu_type=menu_type):
                 break

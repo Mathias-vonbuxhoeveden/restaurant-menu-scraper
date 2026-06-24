@@ -1,0 +1,27 @@
+{
+  "prospect_id": "00000000-0000-0000-0000-000000000000",
+  "slug": "test-piadina-mqsiq2xi",
+  "job_id": "00000000-0000-0000-0000-000000000000",
+  "restaurant_name": "Piadina",
+  "address": "Götgatan 78, 118 30 Stockholm, Sverige",
+  "email": "piadina@gmail.com",
+  "competitors": "Invece (Götgatan 73, 116 62 Stockholm, Sverige)\nMedis kök och bar (Medborgarplatsen 29, 118 26 Stockholm, Sverige)",
+  "callback_url": "https://example.com/callback",
+  "menu_type": "a_la_carte",
+  "google_place_id": "ChIJ1xeJXh93X0YRfy79hZvSOuo",
+  "website_url": "http://piadina.se/",
+  "competitor_places": [
+    {
+      "name": "Invece",
+      "place_id": "ChIJhfjyz_B3X0YRJtQjjG-42Lk",
+      "address": "Götgatan 73, 116 62 Stockholm, Sverige",
+      "website_url": "https://invece.se/?utm_source=google"
+    },
+    {
+      "name": "Medis kök och bar",
+      "place_id": "ChIJx8sAZOJ3X0YRtZ4CaTmMbO8",
+      "address": "Medborgarplatsen 29, 118 26 Stockholm, Sverige",
+      "website_url": "https://www.mediskokochbar.se/"
+    }
+  ]
+}
