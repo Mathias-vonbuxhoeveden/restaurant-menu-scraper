@@ -117,7 +117,7 @@ def _process(req: ScrapeRequest) -> None:
             result = future.result()
             results[result["name"]] = result
 
-    ordered = [results[name] for name, _, _ in all_restaurants if name in results]
+    ordered = [results[name] for name, _, _, _ in all_restaurants if name in results]
 
     payload = {
         "prospect_id": req.prospect_id,
