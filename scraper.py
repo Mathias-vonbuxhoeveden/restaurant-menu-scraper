@@ -593,29 +593,37 @@ def _scrape_heynow_menu(page, url: str, language: str = "sv", menu_type: str = "
     then hand the combined text to Claude in a single extraction pass.
     """
     page.goto(url, wait_until="domcontentloaded", timeout=30000)
-    page.wait_for_timeout(1500)
+
+    category_selector = "button:has(i.fa-chevron-right)"
+    lang_dialog_selector = "button:has-text('No, keep')"
+    # The Angular app renders client-side after domcontentloaded fires, and how long that
+    # takes depends on server load (e.g. several restaurants scraping concurrently) — a fixed
+    # sleep here is not reliable, so wait for either the categories or the language dialog.
+    try:
+        page.wait_for_selector(f"{category_selector}, {lang_dialog_selector}", timeout=15000)
+    except Exception as e:
+        print(f"  HeyNow: sidan renderade aldrig kategorier: {e}")
 
     try:
-        lang_btn = page.locator("button:has-text('No, keep')").first
+        lang_btn = page.locator(lang_dialog_selector).first
         if lang_btn.is_visible(timeout=1000):
             lang_btn.click(timeout=1000)
-            page.wait_for_timeout(500)
+            page.wait_for_selector(category_selector, timeout=15000)
     except Exception:
         pass
     _dismiss_popups(page)
 
-    category_selector = "button:has(i.fa-chevron-right)"
     count = page.locator(category_selector).count()
     print(f"  HeyNow: {count} kategorier hittade")
 
     texts: list[str] = []
     for i in range(count):
         try:
-            page.locator(category_selector).nth(i).click(timeout=3000)
-            page.wait_for_timeout(600)
+            page.locator(category_selector).nth(i).click(timeout=5000)
+            page.wait_for_timeout(800)
             texts.append(page.inner_text("body"))
-            page.go_back(timeout=3000)
-            page.wait_for_timeout(600)
+            page.go_back(timeout=5000)
+            page.wait_for_selector(category_selector, timeout=10000)
         except Exception as e:
             print(f"  HeyNow: kategori {i + 1}/{count} misslyckades: {e}")
 
