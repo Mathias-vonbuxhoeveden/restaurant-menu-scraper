@@ -21,6 +21,12 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 DEBUG = False  # set to True via --debug flag
@@ -89,6 +95,11 @@ def is_pdf_url(url: str) -> bool:
 
 def is_docx_url(url: str) -> bool:
     return urlparse(url).path.lower().endswith(".docx")
+
+
+def _is_heynow_url(url: str) -> bool:
+    host = urlparse(url).netloc.lower()
+    return host == "hey.hn" or host.endswith(".heynow.ai")
 
 
 
@@ -572,6 +583,54 @@ def _dismiss_popups(page) -> None:
             pass
 
 
+def _scrape_heynow_menu(page, url: str, language: str = "sv", menu_type: str = "dinner") -> list[tuple[str, str, str, str]]:
+    """
+    HeyNow (order.heynow.ai / hey.hn) renders each menu category as its own SPA route:
+    clicking a category button *replaces* the page content instead of appending to it, and
+    the initial page load only shows category names, not dishes. `networkidle` also never
+    fires here (long-lived background connections), so callers must use `domcontentloaded`.
+    We click through every category button one by one, accumulating each category's text,
+    then hand the combined text to Claude in a single extraction pass.
+    """
+    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(1500)
+
+    try:
+        lang_btn = page.locator("button:has-text('No, keep')").first
+        if lang_btn.is_visible(timeout=1000):
+            lang_btn.click(timeout=1000)
+            page.wait_for_timeout(500)
+    except Exception:
+        pass
+    _dismiss_popups(page)
+
+    category_selector = "button:has(i.fa-chevron-right)"
+    count = page.locator(category_selector).count()
+    print(f"  HeyNow: {count} kategorier hittade")
+
+    texts: list[str] = []
+    for i in range(count):
+        try:
+            page.locator(category_selector).nth(i).click(timeout=3000)
+            page.wait_for_timeout(600)
+            texts.append(page.inner_text("body"))
+            page.go_back(timeout=3000)
+            page.wait_for_timeout(600)
+        except Exception as e:
+            print(f"  HeyNow: kategori {i + 1}/{count} misslyckades: {e}")
+
+    combined_text = "\n\n".join(texts)
+    if len(combined_text) > MAX_HTML_TEXT_CHARS:
+        print(f"  HeyNow: text trunkerad: {len(combined_text)} → {MAX_HTML_TEXT_CHARS} tecken")
+        combined_text = combined_text[:MAX_HTML_TEXT_CHARS]
+    print(f"  HeyNow: {len(combined_text)} tecken totalt, skickar till Claude …")
+    try:
+        return extract_with_claude(combined_text, language=language, menu_type=menu_type)
+    except Exception as e:
+        print(f"  HeyNow: Claude-extraktion misslyckades: {e}")
+        return []
+
+
 def scrape_dynamic(url: str, language: str = "sv", menu_type: str = "dinner", restaurant_name: str | None = None, restaurant_address: str | None = None) -> list[tuple[str, str, str, str]]:
     print("Playwright: renderar JS-sida …")
     from playwright.sync_api import sync_playwright
@@ -610,6 +669,13 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
                 route.continue_()
 
         page.route("**/*", _block_heavy)
+
+        if _is_heynow_url(url):
+            print(f"  HeyNow-URL angiven direkt: {url}")
+            rows = _scrape_heynow_menu(page, url, language=language, menu_type=menu_type)
+            browser.close()
+            return rows
+
         page.goto(url, wait_until="networkidle", timeout=30000)
         _dismiss_popups(page)
 
@@ -673,6 +739,11 @@ def _scrape_dynamic_impl(url: str, language: str = "sv", menu_type: str = "dinne
                         print(f"  Länk pekar direkt på PDF: {target}")
                         browser.close()
                         return scrape_pdf_from_url(target, language=language, menu_type=menu_type)
+                    if _is_heynow_url(target):
+                        print(f"  Claude valde HeyNow-meny: {target}")
+                        rows = _scrape_heynow_menu(page, target, language=language, menu_type=menu_type)
+                        browser.close()
+                        return rows
                     if target in visited:
                         print(f"  URL redan besökt, avbryter: {target}")
                         break
