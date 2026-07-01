@@ -14,12 +14,9 @@ Usage:
 """
 
 import argparse
-import io
 import json
 import logging
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import redirect_stdout
 from pathlib import Path
 
 import openpyxl
@@ -33,7 +30,7 @@ from evaluate import (
     print_report,
     read_xlsx_all_sheets,
 )
-from pipeline import scrape_menu, write_workbook
+from pipeline import scrape_restaurants_concurrent, write_workbook
 
 logging.basicConfig(
     level=logging.INFO,
@@ -98,36 +95,8 @@ def restaurants_from_payload(payload: dict) -> list[tuple[str, str, str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# Scrape phase — runs scrape_menu() per restaurant, captures nav log
+# Scrape phase — runs scrape_restaurants_concurrent() for all restaurants, captures nav log
 # ---------------------------------------------------------------------------
-
-def _scrape_one(name: str, address: str, url: str, menu_type: str) -> tuple[str, list, str]:
-    """Returns (name, rows, nav_log)."""
-    if not url:
-        return name, [], "(ingen URL)"
-
-    stdout_buf = io.StringIO()
-    log_buf    = io.StringIO()
-
-    # Attach a temporary log handler so WARNING/INFO from scraper ends up in log_buf
-    handler = logging.StreamHandler(log_buf)
-    handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter("%(levelname)s  %(message)s"))
-    root_logger = logging.getLogger()
-    root_logger.addHandler(handler)
-
-    try:
-        with redirect_stdout(stdout_buf):
-            rows = scrape_menu(url, menu_type=menu_type, restaurant_name=name, restaurant_address=address)
-    except Exception as exc:
-        rows = []
-        print(f"EXCEPTION: {exc}", file=stdout_buf)
-    finally:
-        root_logger.removeHandler(handler)
-
-    nav_log = f"URL: {url}\n" + stdout_buf.getvalue() + log_buf.getvalue()
-    return name, rows, nav_log
-
 
 def scrape_phase(
     restaurants: list[tuple[str, str, str, str]],
@@ -135,7 +104,11 @@ def scrape_phase(
     only: str | None,
 ) -> tuple[dict[str, list], dict[str, str]]:
     """
-    Runs scraping in parallel.
+    Runs scraping via the same concurrent orchestration api.py uses for a real
+    /api/scrape request (scrape_restaurants_concurrent in pipeline.py), so local eval
+    exercises the exact same concurrency behavior as production instead of a separate,
+    sequential re-implementation that can drift out of sync.
+
     Returns:
         scraped_rows:  {name: [(Rätt, Pris, Kategori, Beskrivning), ...]}
         nav_logs:      {name: nav_log_string}
@@ -149,13 +122,9 @@ def scrape_phase(
 
     log.info("Skrapar %d restauranger: %s", len(restaurants), [n for n, _, _, _ in restaurants])
 
-    scraped_rows: dict[str, list] = {}
-    nav_logs:     dict[str, str]  = {}
-
-    for name, address, url, menu_type in restaurants:
-        name, rows, nav_log = _scrape_one(name, address, url, menu_type)
-        scraped_rows[name] = rows
-        nav_logs[name]     = nav_log
+    scraped = scrape_restaurants_concurrent(restaurants)
+    scraped_rows: dict[str, list] = {name: v["rows"] for name, v in scraped.items()}
+    nav_logs:     dict[str, str]  = {name: v["nav_log"] for name, v in scraped.items()}
 
     # Save scraped data to Excel (preserving payload order)
     sheets = [(name, scraped_rows[name]) for name, _, _, _ in restaurants if name in scraped_rows]

@@ -9,13 +9,12 @@ GET  /health       → hälsokontroll
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 from fastapi import BackgroundTasks, FastAPI
 from pydantic import BaseModel
 
-from pipeline import scrape_menu
+from pipeline import scrape_restaurants_concurrent
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,30 +69,6 @@ def scrape(req: ScrapeRequest, background_tasks: BackgroundTasks):
 # Bakgrundshantering
 # ---------------------------------------------------------------------------
 
-def _scrape_one(name: str, address: str, place_id: str, website_url: str, menu_type: str) -> dict:
-    log.info("=== Startar: %s ===", name)
-    items = []
-    if website_url:
-        try:
-            rows = scrape_menu(website_url, menu_type=menu_type, restaurant_name=name, restaurant_address=address)
-            items = [
-                {
-                    "name": row[0],
-                    "price": _parse_price(row[1]),
-                    "category": row[2],
-                    "description": row[3],
-                }
-                for row in rows
-            ]
-        except Exception as exc:
-            log.error("Scraping misslyckades för '%s': %s", name, exc)
-    else:
-        log.warning("Ingen website_url för '%s' — hoppar över", name)
-
-    log.info("=== Klar: %s (%d rätter) ===", name, len(items))
-    return {"google_place_id": place_id, "name": name, "items": items}
-
-
 def _parse_price(price_str: str) -> int | str:
     try:
         return int(price_str)
@@ -103,21 +78,27 @@ def _parse_price(price_str: str) -> int | str:
 
 def _process(req: ScrapeRequest) -> None:
     all_restaurants = [
-        (req.restaurant_name, req.address, req.google_place_id, req.website_url),
-        *((c.name, c.address, c.place_id, c.website_url) for c in req.competitor_places),
+        (req.restaurant_name, req.address, req.website_url, req.menu_type),
+        *((c.name, c.address, c.website_url, req.menu_type) for c in req.competitor_places),
     ]
+    place_id_by_name = {req.restaurant_name: req.google_place_id}
+    place_id_by_name.update({c.name: c.place_id for c in req.competitor_places})
 
-    results: dict[str, dict] = {}
-    with ThreadPoolExecutor(max_workers=len(all_restaurants)) as executor:
-        futures = {
-            executor.submit(_scrape_one, name, address, place_id, website_url, req.menu_type): name
-            for name, address, place_id, website_url in all_restaurants
-        }
-        for future in as_completed(futures):
-            result = future.result()
-            results[result["name"]] = result
+    scraped = scrape_restaurants_concurrent(all_restaurants)
 
-    ordered = [results[name] for name, _, _, _ in all_restaurants if name in results]
+    ordered = []
+    for name, _, _, _ in all_restaurants:
+        rows = scraped.get(name, {}).get("rows", [])
+        items = [
+            {
+                "name": row[0],
+                "price": _parse_price(row[1]),
+                "category": row[2],
+                "description": row[3],
+            }
+            for row in rows
+        ]
+        ordered.append({"google_place_id": place_id_by_name.get(name, ""), "name": name, "items": items})
 
     payload = {
         "prospect_id": req.prospect_id,

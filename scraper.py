@@ -604,13 +604,20 @@ def _scrape_heynow_menu(page, url: str, language: str = "sv", menu_type: str = "
     except Exception as e:
         print(f"  HeyNow: sidan renderade aldrig kategorier: {e}")
 
-    try:
-        lang_btn = page.locator(lang_dialog_selector).first
-        if lang_btn.is_visible(timeout=1000):
-            lang_btn.click(timeout=1000)
-            page.wait_for_selector(category_selector, timeout=15000)
-    except Exception:
-        pass
+    def _dismiss_lang_dialog() -> None:
+        # A false negative from a short is_visible() pre-check (dialog present in the DOM but
+        # mid fade-in animation under load) would leave its overlay blocking every later click,
+        # so attempt the click directly (Playwright's .click() has its own actionability retry)
+        # and confirm the dialog is actually gone before moving on.
+        try:
+            lang_locator = page.locator(lang_dialog_selector).first
+            if lang_locator.count() > 0:
+                lang_locator.click(timeout=5000)
+                page.wait_for_selector(lang_dialog_selector, state="hidden", timeout=5000)
+        except Exception as e:
+            print(f"  HeyNow: kunde inte stänga språkdialogen: {e}")
+
+    _dismiss_lang_dialog()
     _dismiss_popups(page)
 
     count = page.locator(category_selector).count()
@@ -619,6 +626,9 @@ def _scrape_heynow_menu(page, url: str, language: str = "sv", menu_type: str = "
     texts: list[str] = []
     for i in range(count):
         try:
+            # The language dialog can render asynchronously, after the categories are already
+            # up — re-check before every click, not just once before the loop starts.
+            _dismiss_lang_dialog()
             page.locator(category_selector).nth(i).click(timeout=5000)
             page.wait_for_timeout(800)
             texts.append(page.inner_text("body"))

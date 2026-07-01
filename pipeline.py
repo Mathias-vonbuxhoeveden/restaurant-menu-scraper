@@ -14,10 +14,14 @@ Output: <Prospektnamn>.xlsx  med en flik per restaurang.
 """
 
 import argparse
+import io
 import logging
 import sys
+import threading
 
 import os
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import anthropic
 import openpyxl
@@ -191,6 +195,116 @@ def scrape_menu(url: str, language: str = "sv", menu_type: str = "dinner", resta
         log.warning("Playwright misslyckades (%s): %s", url, exc)
 
     return []
+
+
+# ---------------------------------------------------------------------------
+# Concurrent multi-restaurant scraping — the ONE place both the production API
+# (api.py) and the local eval harness (run_eval.py) trigger scraping from, so
+# both exercise identical concurrency behavior (same thread-per-restaurant
+# contention that only shows up when several menus scrape at once).
+# ---------------------------------------------------------------------------
+
+class _ThreadLocalStdout:
+    """
+    Routes print() output to a per-thread buffer instead of the real stdout, so
+    concurrent scrape_menu() calls (one per ThreadPoolExecutor worker) don't
+    interleave or clobber each other's captured output. Falls through to the
+    real stdout for any thread that hasn't registered a buffer.
+    """
+
+    def __init__(self, real_stdout):
+        self._real = real_stdout
+        self._local = threading.local()
+
+    def write(self, s):
+        buf = getattr(self._local, "buf", None)
+        (buf if buf is not None else self._real).write(s)
+
+    def flush(self):
+        self._real.flush()
+
+    def set_buffer(self, buf):
+        self._local.buf = buf
+
+    def clear_buffer(self):
+        self._local.buf = None
+
+
+_thread_stdout = _ThreadLocalStdout(sys.stdout)
+sys.stdout = _thread_stdout
+
+
+class _ThreadLogFilter(logging.Filter):
+    """Only lets through log records emitted by one specific thread."""
+
+    def __init__(self, thread_id: int):
+        super().__init__()
+        self._thread_id = thread_id
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.thread == self._thread_id
+
+
+def _scrape_one(name: str, address: str, url: str, menu_type: str) -> tuple[str, list, str]:
+    """Returns (name, rows, nav_log). nav_log combines this call's print() and logging output."""
+    log.info("=== Startar: %s ===", name)
+
+    if not url:
+        log.warning("Ingen website_url för '%s' — hoppar över", name)
+        return name, [], "(ingen URL)"
+
+    stdout_buf = io.StringIO()
+    log_buf = io.StringIO()
+
+    handler = logging.StreamHandler(log_buf)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter("%(levelname)s  %(message)s"))
+    handler.addFilter(_ThreadLogFilter(threading.get_ident()))
+    root_logger = logging.getLogger()
+    root_logger.addHandler(handler)
+    _thread_stdout.set_buffer(stdout_buf)
+
+    try:
+        rows = scrape_menu(url, menu_type=menu_type, restaurant_name=name, restaurant_address=address)
+    except Exception as exc:
+        rows = []
+        stdout_buf.write(f"EXCEPTION: {exc}\n")
+        log.error("Scraping misslyckades för '%s': %s", name, exc)
+    finally:
+        _thread_stdout.clear_buffer()
+        root_logger.removeHandler(handler)
+
+    log.info("=== Klar: %s (%d rätter) ===", name, len(rows))
+    nav_log = f"URL: {url}\n" + stdout_buf.getvalue() + log_buf.getvalue()
+    return name, rows, nav_log
+
+
+def scrape_restaurants_concurrent(
+    restaurants: list[tuple[str, str, str, str]],
+) -> dict[str, dict]:
+    """
+    Scrapes multiple restaurants concurrently, one thread per restaurant — the same
+    orchestration used for a real /api/scrape request, so callers (production and eval)
+    see identical timing/resource-contention behavior instead of two implementations
+    that can silently drift apart.
+
+    restaurants: [(name, address, website_url, menu_type), ...]
+    Returns {name: {"rows": [...], "nav_log": str}}
+    """
+    results: dict[str, dict] = {}
+    if not restaurants:
+        return results
+
+    with ThreadPoolExecutor(max_workers=len(restaurants)) as executor:
+        futures = {
+            executor.submit(_scrape_one, name, address, url, menu_type): name
+            for name, address, url, menu_type in restaurants
+        }
+        for future in as_completed(futures):
+            name, rows, nav_log = future.result()
+            results[name] = {"rows": rows, "nav_log": nav_log}
+
+    return results
 
 
 # ---------------------------------------------------------------------------
